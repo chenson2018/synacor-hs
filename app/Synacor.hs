@@ -1,4 +1,4 @@
-module Synacor.IO where
+module Synacor where
 
 import Control.Monad (replicateM)
 import Data.Binary (Word16)

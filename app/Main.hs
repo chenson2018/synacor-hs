@@ -2,7 +2,7 @@ module Main where
 
 import Control.Monad (when)
 import Options.Applicative
-import Synacor.IO
+import Synacor
 
 data Args = Args
   { path :: String,
