@@ -30,4 +30,5 @@ main =
   do
     Args {path, printOpt} <- execParser opts
     bin <- readBinary path
-    when printOpt (print bin)
+    let vm = fromBinary bin
+    when printOpt (print vm)

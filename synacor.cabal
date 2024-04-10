@@ -71,7 +71,8 @@ executable synacor
                       optparse-applicative >= 0.18.0.0,
                       bytestring,
                       binary,
-                      unix
+                      unix,
+                      containers
 
     -- Directories containing source files.
     hs-source-dirs:   app
