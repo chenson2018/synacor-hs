@@ -28,7 +28,10 @@ opts = info (args <**> helper) (fullDesc <> progDesc "Run or analyze a Synacor p
 main :: IO ()
 main =
   do
+    putStrLn ""
     Args {path, printOpt} <- execParser opts
     bin <- readBinary path
     let vm = fromBinary bin
     when printOpt (print vm)
+    vm' <- untilHalt vm
+    when printOpt (print vm')
