@@ -99,14 +99,11 @@ opLen Out = 2
 opLen In = 2
 opLen Noop = 1
 
--- given an address, return its immediate value and memory/register interpretation
-readMemory :: M.Map Int Int -> Int -> (Int, Int)
-readMemory memory ptr = (immediate, interp immediate)
-  where
-    immediate = memory M.! ptr
-    interp val
-      | val < 32768 = val
-      | otherwise = memory M.! val
+-- given a value, interpret it as either a memory literal or register
+interpMemory :: M.Map Int Int -> Int -> Int
+interpMemory memory val
+  | val < 32768 = val
+  | otherwise = memory M.! val
 
 step :: VM -> IO VM
 step vm@(VM {memory, ptr, stack, input}) =
@@ -115,9 +112,12 @@ step vm@(VM {memory, ptr, stack, input}) =
     let opcode = toEnum $ memory M.! ptr
 
     -- this is lazy, cool!
-    let (a_imm, a_val) = readMemory memory (ptr + 1)
-    let (b_imm, b_val) = readMemory memory (ptr + 2)
-    let (_, c_val) = readMemory memory (ptr + 3)
+    let a_imm = memory M.! (ptr + 1)
+    let b_imm = memory M.! (ptr + 2)
+    let c_imm = memory M.! (ptr + 3)
+    let a_val = interpMemory memory a_imm
+    let b_val = interpMemory memory b_imm
+    let c_val = interpMemory memory c_imm
 
     when
       (opcode == Out)
@@ -174,7 +174,7 @@ step vm@(VM {memory, ptr, stack, input}) =
               And -> vm' {memory = set a_imm $ b_val .&. c_val}
               Or -> vm' {memory = set a_imm $ b_val .|. c_val}
               Not -> vm' {memory = set a_imm $ complement b_val `mod` 32768}
-              Rmem -> vm' {memory = set a_imm (snd $ readMemory memory b_val)}
+              Rmem -> vm' {memory = set a_imm $ interpMemory memory $ memory M.! b_val}
               Wmem -> vm' {memory = set a_val b_val}
               Call -> vm' {stack = ptr' : stack, ptr = a_val}
               Ret ->
