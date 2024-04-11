@@ -74,9 +74,10 @@ data Opcode
   | Noop
   deriving (Show, Enum, Eq)
 
-fromBinary :: [Word16] -> VM
-fromBinary bin = VM {memory, ptr = 0, stack = [], halted = False, input = []}
+fromBinary :: Bool -> [Word16] -> VM
+fromBinary auto bin = VM {memory, ptr = 0, stack = [], halted = False, input}
   where
+    input = if auto then solution else []
     memory = M.fromList $ zip [0 .. 32775] $ map (fromInteger . toInteger) bin ++ repeat 0
 
 -- eventually should handle IO and Maybe (and State?)
@@ -191,3 +192,60 @@ step vm@(VM {memory, ptr, stack, input}) =
 untilHalt :: VM -> IO VM
 untilHalt vm@(VM {halted = True}) = return vm
 untilHalt vm = step vm >>= untilHalt
+
+solution :: String
+solution =
+  unlines
+    [ "take tablet",
+      "use tablet",
+      "doorway",
+      "north",
+      "north",
+      "bridge",
+      "continue",
+      "down",
+      "east",
+      "take empty lantern",
+      "west",
+      "west",
+      "passage",
+      "ladder",
+      "west",
+      "north",
+      "south",
+      "north",
+      "take can",
+      "use can",
+      "use lantern",
+      "west",
+      "ladder",
+      "darkness",
+      "continue",
+      "west",
+      "west",
+      "west",
+      "west",
+      "north",
+      "take red coin",
+      "north",
+      "east",
+      "take concave coin",
+      "down",
+      "take corroded coin",
+      "up",
+      "west",
+      "west",
+      "take blue coin",
+      "up",
+      "take shiny coin",
+      "down",
+      "east",
+      "use blue coin",
+      "use red coin",
+      "use shiny coin",
+      "use concave coin",
+      "use corroded coin",
+      "north",
+      "take teleporter",
+      "use teleporter"
+    ]

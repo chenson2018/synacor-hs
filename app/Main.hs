@@ -6,7 +6,8 @@ import Synacor
 
 data Args = Args
   { path :: String,
-    printOpt :: Bool
+    printOpt :: Bool,
+    autoOpt :: Bool
   }
 
 args :: Parser Args
@@ -21,6 +22,10 @@ args =
       ( long "print"
           <> help "print state on halt"
       )
+    <*> switch
+      ( long "auto"
+          <> help "use precomputed solution"
+      )
 
 opts :: ParserInfo Args
 opts = info (args <**> helper) (fullDesc <> progDesc "Run or analyze a Synacor program")
@@ -29,8 +34,8 @@ main :: IO ()
 main =
   do
     putStrLn ""
-    Args {path, printOpt} <- execParser opts
+    Args {path, printOpt, autoOpt} <- execParser opts
     bin <- readBinary path
-    let vm = fromBinary bin
+    let vm = fromBinary autoOpt bin
     vm' <- untilHalt vm
     when printOpt (print vm')
