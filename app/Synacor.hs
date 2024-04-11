@@ -37,8 +37,8 @@ instance Show VM where
     unlines $
       zipWith
         (++)
-        (map (++ ": ") ["registers", "ptr", "stack"])
-        [show registers, show ptr, show stack]
+        (map (++ ": ") ["ptr", "registers", "stack"])
+        [show ptr, show registers, show stack]
     where
       registers = map (memory M.!) [32768 .. 32775]
 
@@ -105,11 +105,43 @@ interpMemory memory val
   | val < 32768 = val
   | otherwise = memory M.! val
 
+-- take user input, including admin commands that can mutate the VM
+handleInput :: VM -> IO VM
+handleInput vm@(VM {memory, input = []}) =
+  do
+    putStr "> "
+    hFlush stdout
+    s <- getLine
+    case s of
+      "admin" -> do print vm; handleInput vm
+      "set reg" ->
+        do
+          putStr "register to edit: "
+          hFlush stdout
+          reg <- (+ 32768) . read <$> getLine
+          putStr "value: "
+          hFlush stdout
+          val <- read <$> getLine
+          handleInput vm {memory = M.insert reg val memory}
+      "set ptr" ->
+        do
+          putStr "value: "
+          hFlush stdout
+          ptr <- read <$> getLine
+          step vm {ptr}
+      _ -> return (vm {input = s ++ ['\n']})
+handleInput vm = return vm
+
 step :: VM -> IO VM
-step vm@(VM {memory, ptr, stack, input}) =
+step vm =
   do
     -- TODO check failure
-    let opcode = toEnum $ memory M.! ptr
+    let opcode = toEnum $ memory vm M.! ptr vm
+
+    -- input is placed first, in case in changes the VM via an admin command!
+    vm'@(VM {memory, ptr, stack, input}) <- case opcode of
+      In -> handleInput vm
+      _ -> return vm
 
     -- this is lazy, cool!
     let a_imm = memory M.! (ptr + 1)
@@ -126,67 +158,45 @@ step vm@(VM {memory, ptr, stack, input}) =
           putStr [char]
       )
 
-    -- TODO:
-    -- is seperate from the below case so that it can recurse
-    -- doing this in a convoluted way to have inside the function
-    -- doesn't matter here, but would like to extend to edit registers
-    -- would require this to be something like IO (String, VM) ?
-    -- would be nice to have a cleaner way to write this externally
-    let handleInput = case input of
-          [] -> do
-            putStr "> "
-            hFlush stdout
-            s <- getLine
-            case s of
-              "admin" -> do print vm; handleInput
-              _ -> return $ s ++ ['\n']
-          _ -> return input
-
-    input' <- case opcode of
-      In -> handleInput
-      _ -> return input
-
     -- this is just for readability
     let set addr val = M.insert addr val memory
     let ptr' = ptr + opLen opcode
-    let vm' = vm {ptr = ptr', input = input'}
 
     let vm'' =
           ( case opcode of
               Halt -> vm' {halted = True}
-              Set -> vm' {memory = set a_imm b_val}
-              Push -> vm' {stack = a_val : stack}
+              Set -> vm' {memory = set a_imm b_val, ptr = ptr'}
+              Push -> vm' {stack = a_val : stack, ptr = ptr'}
               Pop ->
                 let hd : stack' = stack
-                 in vm' {memory = set a_imm hd, stack = stack'}
+                 in vm' {memory = set a_imm hd, stack = stack', ptr = ptr'}
               Eq ->
                 let val = if b_val == c_val then 1 else 0
-                 in vm' {memory = set a_imm val}
+                 in vm' {memory = set a_imm val, ptr = ptr'}
               Gt ->
                 let val = if b_val > c_val then 1 else 0
-                 in vm' {memory = set a_imm val}
+                 in vm' {memory = set a_imm val, ptr = ptr'}
               Jmp -> vm' {ptr = a_val}
               Jt -> vm' {ptr = if a_val /= 0 then b_imm else ptr'}
               Jf -> vm' {ptr = if a_val == 0 then b_imm else ptr'}
-              Add -> vm' {memory = set a_imm $ (b_val + c_val) `mod` 32768}
-              Mult -> vm' {memory = set a_imm $ (b_val * c_val) `mod` 32768}
-              Mod -> vm' {memory = set a_imm $ b_val `mod` c_val}
-              And -> vm' {memory = set a_imm $ b_val .&. c_val}
-              Or -> vm' {memory = set a_imm $ b_val .|. c_val}
-              Not -> vm' {memory = set a_imm $ complement b_val `mod` 32768}
-              Rmem -> vm' {memory = set a_imm $ interpMemory memory $ memory M.! b_val}
-              Wmem -> vm' {memory = set a_val b_val}
+              Add -> vm' {memory = set a_imm $ (b_val + c_val) `mod` 32768, ptr = ptr'}
+              Mult -> vm' {memory = set a_imm $ (b_val * c_val) `mod` 32768, ptr = ptr'}
+              Mod -> vm' {memory = set a_imm $ b_val `mod` c_val, ptr = ptr'}
+              And -> vm' {memory = set a_imm $ b_val .&. c_val, ptr = ptr'}
+              Or -> vm' {memory = set a_imm $ b_val .|. c_val, ptr = ptr'}
+              Not -> vm' {memory = set a_imm $ complement b_val `mod` 32768, ptr = ptr'}
+              Rmem -> vm' {memory = set a_imm $ interpMemory memory $ memory M.! b_val, ptr = ptr'}
+              Wmem -> vm' {memory = set a_val b_val, ptr = ptr'}
               Call -> vm' {stack = ptr' : stack, ptr = a_val}
               Ret ->
                 case stack of
                   [] -> vm' {halted = True}
-                  hd : stack' -> vm {ptr = hd, stack = stack'}
+                  hd : stack' -> vm' {ptr = hd, stack = stack'}
               In ->
-                let char :: Int = fromEnum $ head input'
-                 in let input'' = tail input'
-                     in vm' {memory = set a_imm char, input = input''}
-              Out -> vm'
-              Noop -> vm'
+                let char :: Int = fromEnum $ head input
+                 in vm' {memory = set a_imm char, input = tail input, ptr = ptr'}
+              Out -> vm' {ptr = ptr'}
+              Noop -> vm' {ptr = ptr'}
           )
 
     return vm''
