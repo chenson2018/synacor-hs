@@ -11,6 +11,10 @@ import System.IO (hFlush, stdout)
 import System.Posix (fileSize, getFileStatus)
 import Text.Printf (printf)
 
+-- TODO:
+--  for step and assembly, check all bounds ny using MaybeT
+
+-- read a binary file to 16-bit words
 readBinary :: String -> IO [Word16]
 readBinary file =
   do
@@ -18,41 +22,6 @@ readBinary file =
     let readInts = runGet $ replicateM (n `div` 2) getWord16le
     readInts . BL.fromChunks . (: []) <$> BS.readFile file
 
-{- ORMOLU_DISABLE -}
-
--- TODO : maybeT here?
-assembly :: Int -> [Word16] -> IO ()
-assembly _ [] = return ()
-assembly ptr (o : xs) =
-  if o <= 21
-    then
-      let opcode :: Opcode = (toEnum . fromInteger . toInteger) o in 
-      
-      -- print for each airty
-      let p0 op tl       = putStrLn (printf "%d: %s"          ptr (show op)                     ) >> assembly (ptr + 1) tl in
-      let p1 op tl a     = putStrLn (printf "%d: %s %s"       ptr (show op) (md a)              ) >> assembly (ptr + 2) tl in 
-      let p2 op tl a b   = putStrLn (printf "%d: %s %s %s"    ptr (show op) (md a) (md b)       ) >> assembly (ptr + 3) tl in
-      let p3 op tl a b c = putStrLn (printf "%d: %s %s %s %s" ptr (show op) (md a) (md b) (md c)) >> assembly (ptr + 4) tl in
-
-      case (opLen opcode, xs) of
-           (1, tl) -> p0 opcode tl
-           (2, a : tl) -> p1 opcode tl a
-           (3, a : b : tl) -> p2 opcode tl a b
-           (4, a : b : c : tl) -> p3 opcode tl a b c
-    else 
-      putStrLn (printf "%d: data %s" ptr (md o)) >> assembly (ptr + 1) xs
-    where
-      md val | val < 32768 = show val
-             | otherwise = printf "$%d" (val - 32768)
-
-{- ORMOLU_ENABLE -}
-
--- TODO:
---  do I really want a map here?
---  Int vs Integer?
---  should registers and memory be combined like this?
---  I think monad transformers would help me to combine IO/State/Maybe monads
---    is the Flexible contexts extension relevant?
 data VM = VM
   { memory :: M.Map Int Int,
     ptr :: Int,
@@ -60,6 +29,19 @@ data VM = VM
     halted :: Bool,
     input :: [Char]
   }
+
+-- given a value, interpret it as either a memory literal or register
+interpMemory :: M.Map Int Int -> Int -> Int
+interpMemory memory val
+  | val < 32768 = val
+  | otherwise = memory M.! val
+
+-- initialize a VM from a binary
+fromBinary :: Bool -> [Word16] -> VM
+fromBinary auto bin = VM {memory, ptr = 0, stack = [], halted = False, input}
+  where
+    input = if auto then solution else []
+    memory = M.fromList $ zip [0 .. 32775] $ map (fromInteger . toInteger) bin ++ repeat 0
 
 -- show just the registers when printing
 instance Show VM where
@@ -98,42 +80,30 @@ data Opcode
   | Noop
   deriving (Show, Enum, Eq)
 
-fromBinary :: Bool -> [Word16] -> VM
-fromBinary auto bin = VM {memory, ptr = 0, stack = [], halted = False, input}
-  where
-    input = if auto then solution else []
-    memory = M.fromList $ zip [0 .. 32775] $ map (fromInteger . toInteger) bin ++ repeat 0
-
--- TODO: eventually should handle IO and Maybe (and State?)
-opLen :: Opcode -> Int
-opLen Halt = 1
-opLen Set = 3
-opLen Push = 2
-opLen Pop = 2
-opLen Eq = 4
-opLen Gt = 4
-opLen Jmp = 2
-opLen Jt = 3
-opLen Jf = 3
-opLen Add = 4
-opLen Mult = 4
-opLen Mod = 4
-opLen And = 4
-opLen Or = 4
-opLen Not = 3
-opLen Rmem = 3
-opLen Wmem = 3
-opLen Call = 2
-opLen Ret = 1
-opLen Out = 2
-opLen In = 2
-opLen Noop = 1
-
--- given a value, interpret it as either a memory literal or register
-interpMemory :: M.Map Int Int -> Int -> Int
-interpMemory memory val
-  | val < 32768 = val
-  | otherwise = memory M.! val
+-- width of each instruction, including the opcode
+width :: Opcode -> Int
+width Halt = 1
+width Set = 3
+width Push = 2
+width Pop = 2
+width Eq = 4
+width Gt = 4
+width Jmp = 2
+width Jt = 3
+width Jf = 3
+width Add = 4
+width Mult = 4
+width Mod = 4
+width And = 4
+width Or = 4
+width Not = 3
+width Rmem = 3
+width Wmem = 3
+width Call = 2
+width Ret = 1
+width Out = 2
+width In = 2
+width Noop = 1
 
 -- take user input, including admin commands that can mutate the VM
 handleInput :: VM -> IO VM
@@ -162,10 +132,10 @@ handleInput vm@(VM {memory, input = []}) =
       _ -> return (vm {input = s ++ ['\n']})
 handleInput vm = return vm
 
+-- an iteration of the virtual machine
 step :: VM -> IO VM
 step vm =
   do
-    -- TODO check failure
     let opcode = toEnum $ memory vm M.! ptr vm
 
     -- input is placed first, in case it changes the VM via an admin command!
@@ -190,7 +160,7 @@ step vm =
 
     -- this is just for readability
     let set addr val = M.insert addr val memory
-    let ptr' = ptr + opLen opcode
+    let ptr' = ptr + width opcode
 
     let vm'' =
           ( case opcode of
@@ -231,10 +201,42 @@ step vm =
 
     return vm''
 
+-- iterate until the VM halts
 untilHalt :: VM -> IO VM
 untilHalt vm@(VM {halted = True}) = return vm
 untilHalt vm = step vm >>= untilHalt
 
+-- a function for printing assembly from a binary
+
+{- ORMOLU_DISABLE -}
+
+assembly :: Int -> [Word16] -> IO ()
+assembly _ [] = return ()
+assembly ptr (o : xs) =
+  if o <= 21
+    then
+      let opcode :: Opcode = (toEnum . fromInteger . toInteger) o in 
+      
+      -- print for each airty
+      let p0 op tl       = putStrLn (printf "%d: %s"          ptr (show op)                     ) >> assembly (ptr + 1) tl in
+      let p1 op tl a     = putStrLn (printf "%d: %s %s"       ptr (show op) (md a)              ) >> assembly (ptr + 2) tl in 
+      let p2 op tl a b   = putStrLn (printf "%d: %s %s %s"    ptr (show op) (md a) (md b)       ) >> assembly (ptr + 3) tl in
+      let p3 op tl a b c = putStrLn (printf "%d: %s %s %s %s" ptr (show op) (md a) (md b) (md c)) >> assembly (ptr + 4) tl in
+
+      case (width opcode, xs) of
+           (1, tl) -> p0 opcode tl
+           (2, a : tl) -> p1 opcode tl a
+           (3, a : b : tl) -> p2 opcode tl a b
+           (4, a : b : c : tl) -> p3 opcode tl a b c
+    else 
+      putStrLn (printf "%d: data %s" ptr (md o)) >> assembly (ptr + 1) xs
+    where
+      md val | val < 32768 = show val
+             | otherwise = printf "$%d" (val - 32768)
+
+{- ORMOLU_ENABLE -}
+
+-- precomputed solution
 solution :: String
 solution =
   unlines
