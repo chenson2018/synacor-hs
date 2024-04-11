@@ -74,7 +74,7 @@ fromBinary auto bin = VM {memory, ptr = 0, stack = [], halted = False, input}
     input = if auto then solution else []
     memory = M.fromList $ zip [0 .. 32775] $ map (fromInteger . toInteger) bin ++ repeat 0
 
--- eventually should handle IO and Maybe (and State?)
+-- TODO: eventually should handle IO and Maybe (and State?)
 opLen :: Opcode -> Int
 opLen Halt = 1
 opLen Set = 3
@@ -126,16 +126,24 @@ step vm@(VM {memory, ptr, stack, input}) =
           putStr [char]
       )
 
-    input' <- case opcode of
-      In ->
-        case input of
-          [] ->
-            do
-              putStr "> "
-              hFlush stdout
-              s <- getLine
-              return $ s ++ ['\n']
+    -- TODO:
+    -- is seperate from the below case so that it can recurse
+    -- doing this in a convoluted way to have inside the function
+    -- doesn't matter here, but would like to extend to edit registers
+    -- would require this to be something like IO (String, VM) ?
+    -- would be nice to have a cleaner way to write this externally
+    let handleInput = case input of
+          [] -> do
+            putStr "> "
+            hFlush stdout
+            s <- getLine
+            case s of
+              "admin" -> do print vm; handleInput
+              _ -> return $ s ++ ['\n']
           _ -> return input
+
+    input' <- case opcode of
+      In -> handleInput
       _ -> return input
 
     -- this is just for readability
