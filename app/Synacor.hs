@@ -9,6 +9,7 @@ import Data.ByteString.Lazy qualified as BL
 import Data.Map qualified as M
 import System.IO (hFlush, stdout)
 import System.Posix (fileSize, getFileStatus)
+import Text.Printf (printf)
 
 readBinary :: String -> IO [Word16]
 readBinary file =
@@ -16,6 +17,35 @@ readBinary file =
     n <- fromInteger . toInteger . fileSize <$> getFileStatus file
     let readInts = runGet $ replicateM (n `div` 2) getWord16le
     readInts . BL.fromChunks . (: []) <$> BS.readFile file
+
+{- ORMOLU_DISABLE -}
+
+-- TODO : maybeT here?
+assembly :: Int -> [Word16] -> IO ()
+assembly _ [] = return ()
+assembly ptr (o : xs) =
+  if o <= 21
+    then
+      let opcode :: Opcode = (toEnum . fromInteger . toInteger) o in 
+      
+      -- print for each airty
+      let p0 op tl       = putStrLn (printf "%d: %s"          ptr (show op)                     ) >> assembly (ptr + 1) tl in
+      let p1 op tl a     = putStrLn (printf "%d: %s %s"       ptr (show op) (md a)              ) >> assembly (ptr + 2) tl in 
+      let p2 op tl a b   = putStrLn (printf "%d: %s %s %s"    ptr (show op) (md a) (md b)       ) >> assembly (ptr + 3) tl in
+      let p3 op tl a b c = putStrLn (printf "%d: %s %s %s %s" ptr (show op) (md a) (md b) (md c)) >> assembly (ptr + 4) tl in
+
+      case (opLen opcode, xs) of
+           (1, tl) -> p0 opcode tl
+           (2, a : tl) -> p1 opcode tl a
+           (3, a : b : tl) -> p2 opcode tl a b
+           (4, a : b : c : tl) -> p3 opcode tl a b c
+    else 
+      putStrLn (printf "%d: data %s" ptr (md o)) >> assembly (ptr + 1) xs
+    where
+      md val | val < 32768 = show val
+             | otherwise = printf "$%d" (val - 32768)
+
+{- ORMOLU_ENABLE -}
 
 -- TODO:
 --  do I really want a map here?

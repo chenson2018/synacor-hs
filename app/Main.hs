@@ -4,10 +4,13 @@ import Control.Monad (when)
 import Options.Applicative
 import Synacor
 
+data Action = Convert | Run deriving (Eq)
+
 data Args = Args
   { path :: String,
     printOpt :: Bool,
-    autoOpt :: Bool
+    autoOpt :: Bool,
+    actionOpt :: Action
   }
 
 args :: Parser Args
@@ -26,6 +29,9 @@ args =
       ( long "auto"
           <> help "use precomputed solution"
       )
+    <*> ( flag' Convert (long "convert" <> help "convert from binary")
+            <|> flag' Run (long "run" <> help "run binary")
+        )
 
 opts :: ParserInfo Args
 opts = info (args <**> helper) (fullDesc <> progDesc "Run or analyze a Synacor program")
@@ -33,9 +39,12 @@ opts = info (args <**> helper) (fullDesc <> progDesc "Run or analyze a Synacor p
 main :: IO ()
 main =
   do
-    putStrLn ""
-    Args {path, printOpt, autoOpt} <- execParser opts
+    Args {path, printOpt, autoOpt, actionOpt} <- execParser opts
     bin <- readBinary path
-    let vm = fromBinary autoOpt bin
-    vm' <- untilHalt vm
-    when printOpt (print vm')
+    if actionOpt == Run
+      then do
+        putStrLn ""
+        let vm = fromBinary autoOpt bin
+        vm' <- untilHalt vm
+        when printOpt (print vm')
+      else assembly 0 bin
