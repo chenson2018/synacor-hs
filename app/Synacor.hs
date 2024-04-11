@@ -149,7 +149,7 @@ handleInput vm@(VM {memory, input = []}) =
           hFlush stdout
           stop <- read <$> getLine
           putStrLn ""
-          assembly True start $ filter (\k -> start <= k && k <= stop) $ toList memory
+          assembly True start [val | (addr, val) <- zip [0 ..] $ toList memory, start <= addr && addr <= stop]
           handleInput vm
       _ -> return (vm {input = s ++ ['\n']})
 handleInput vm = return vm
