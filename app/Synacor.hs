@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveDataTypeable #-}
+
 module Synacor where
 
 import Control.Monad (replicateM, when)
@@ -6,6 +8,8 @@ import Data.Binary.Get (getWord16le, runGet)
 import Data.Bits (complement, (.&.), (.|.))
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BL
+import Data.Char (toLower)
+import Data.Data
 import Data.Map qualified as M
 import System.IO (hFlush, stdout)
 import System.Posix (fileSize, getFileStatus)
@@ -78,7 +82,10 @@ data Opcode
   | Out
   | In
   | Noop
-  deriving (Show, Enum, Eq)
+  deriving (Typeable, Data, Enum, Eq)
+
+instance Show Opcode where
+  show = map toLower . showConstr . toConstr
 
 -- width of each instruction, including the opcode
 width :: Opcode -> Int
