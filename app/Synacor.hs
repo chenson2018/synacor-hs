@@ -216,22 +216,25 @@ assembly ptr (o : xs) =
   if o <= 21
     then
       let opcode :: Opcode = (toEnum . fromInteger . toInteger) o in 
-      
+
       -- print for each airty
-      let p0 op tl       = putStrLn (printf "%d: %s"          ptr (show op)                     ) >> assembly (ptr + 1) tl in
-      let p1 op tl a     = putStrLn (printf "%d: %s %s"       ptr (show op) (md a)              ) >> assembly (ptr + 2) tl in 
-      let p2 op tl a b   = putStrLn (printf "%d: %s %s %s"    ptr (show op) (md a) (md b)       ) >> assembly (ptr + 3) tl in
-      let p3 op tl a b c = putStrLn (printf "%d: %s %s %s %s" ptr (show op) (md a) (md b) (md c)) >> assembly (ptr + 4) tl in
+      let p0 tl       = putStrLn (printf "%06d: %s"          ptr (show opcode)                     ) >> assembly (ptr + 1) tl in
+      let p1 tl a     = putStrLn (printf "%06d: %s %s"       ptr (show opcode) (md a)              ) >> assembly (ptr + 2) tl in 
+      let p2 tl a b   = putStrLn (printf "%06d: %s %s %s"    ptr (show opcode) (md a) (md b)       ) >> assembly (ptr + 3) tl in
+      let p3 tl a b c = putStrLn (printf "%06d: %s %s %s %s" ptr (show opcode) (md a) (md b) (md c)) >> assembly (ptr + 4) tl in
 
       case (width opcode, xs) of
-           (1, tl) -> p0 opcode tl
-           (2, a : tl) -> p1 opcode tl a
-           (3, a : b : tl) -> p2 opcode tl a b
-           (4, a : b : c : tl) -> p3 opcode tl a b c
+           (1, tl) -> p0 tl
+           (2, a : tl) -> p1 tl a
+           (3, a : b : tl) -> p2 tl a b
+           (4, a : b : c : tl) -> p3 tl a b c
     else 
-      putStrLn (printf "%d: data %s" ptr (md o)) >> assembly (ptr + 1) xs
+      putStrLn (printf "%06d: data %s" ptr (md o)) >> assembly (ptr + 1) xs
     where
-      md val | val < 32768 = show val
+      md val | o == 19 = 
+                let c :: Char = (toEnum . fromInteger . toInteger) val in 
+                if c == '\n' then "'\\n'" else printf "'%c'" c
+             | val < 32768 = show val
              | otherwise = printf "$%d" (val - 32768)
 
 {- ORMOLU_ENABLE -}
