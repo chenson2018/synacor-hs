@@ -12,7 +12,7 @@ import System.Posix (fileSize, getFileStatus)
 import Text.Printf (printf)
 
 -- TODO:
---  for step and assembly, check all bounds ny using MaybeT
+--  for step and assembly, check all bounds by using MaybeT
 
 -- read a binary file to 16-bit words
 readBinary :: String -> IO [Word16]
