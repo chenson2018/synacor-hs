@@ -168,7 +168,7 @@ step vm =
     -- TODO check failure
     let opcode = toEnum $ memory vm M.! ptr vm
 
-    -- input is placed first, in case in changes the VM via an admin command!
+    -- input is placed first, in case it changes the VM via an admin command!
     vm'@(VM {memory, ptr, stack, input}) <- case opcode of
       In -> handleInput vm
       _ -> return vm
