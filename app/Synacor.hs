@@ -153,10 +153,7 @@ step vm =
 
     when
       (opcode == Out)
-      ( do
-          let char :: Char = toEnum a_val
-          putStr [char]
-      )
+      (putChar $ toEnum a_val)
 
     -- this is just for readability
     let set addr val = M.insert addr val memory
