@@ -181,44 +181,42 @@ step vm =
     let set addr val = S.update addr val memory
     let ptr' = ptr + width opcode
 
-    let vm'' =
-          ( case opcode of
-              Halt -> vm' {halted = True}
-              Set -> vm' {memory = set a_imm b_val, ptr = ptr'}
-              Push -> vm' {stack = a_val : stack, ptr = ptr'}
-              Pop ->
-                let hd : stack' = stack
-                 in vm' {memory = set a_imm hd, stack = stack', ptr = ptr'}
-              Eq ->
-                let val = if b_val == c_val then 1 else 0
-                 in vm' {memory = set a_imm val, ptr = ptr'}
-              Gt ->
-                let val = if b_val > c_val then 1 else 0
-                 in vm' {memory = set a_imm val, ptr = ptr'}
-              Jmp -> vm' {ptr = a_val}
-              Jt -> vm' {ptr = if a_val /= 0 then b_imm else ptr'}
-              Jf -> vm' {ptr = if a_val == 0 then b_imm else ptr'}
-              Add -> vm' {memory = set a_imm $ (b_val + c_val) `mod` 32768, ptr = ptr'}
-              Mult -> vm' {memory = set a_imm $ (b_val * c_val) `mod` 32768, ptr = ptr'}
-              Mod -> vm' {memory = set a_imm $ b_val `mod` c_val, ptr = ptr'}
-              And -> vm' {memory = set a_imm $ b_val .&. c_val, ptr = ptr'}
-              Or -> vm' {memory = set a_imm $ b_val .|. c_val, ptr = ptr'}
-              Not -> vm' {memory = set a_imm $ complement b_val `mod` 32768, ptr = ptr'}
-              Rmem -> vm' {memory = set a_imm $ interpMemory memory $ S.index memory b_val, ptr = ptr'}
-              Wmem -> vm' {memory = set a_val b_val, ptr = ptr'}
-              Call -> vm' {stack = ptr' : stack, ptr = a_val}
-              Ret ->
-                case stack of
-                  [] -> vm' {halted = True}
-                  hd : stack' -> vm' {ptr = hd, stack = stack'}
-              In ->
-                let char :: Int = fromEnum $ head input
-                 in vm' {memory = set a_imm char, input = tail input, ptr = ptr'}
-              Out -> vm' {ptr = ptr'}
-              Noop -> vm' {ptr = ptr'}
-          )
-
-    return vm''
+    return
+      ( case opcode of
+          Halt -> vm' {halted = True}
+          Set -> vm' {memory = set a_imm b_val, ptr = ptr'}
+          Push -> vm' {stack = a_val : stack, ptr = ptr'}
+          Pop ->
+            let hd : stack' = stack
+             in vm' {memory = set a_imm hd, stack = stack', ptr = ptr'}
+          Eq ->
+            let val = if b_val == c_val then 1 else 0
+             in vm' {memory = set a_imm val, ptr = ptr'}
+          Gt ->
+            let val = if b_val > c_val then 1 else 0
+             in vm' {memory = set a_imm val, ptr = ptr'}
+          Jmp -> vm' {ptr = a_val}
+          Jt -> vm' {ptr = if a_val /= 0 then b_imm else ptr'}
+          Jf -> vm' {ptr = if a_val == 0 then b_imm else ptr'}
+          Add -> vm' {memory = set a_imm $ (b_val + c_val) `mod` 32768, ptr = ptr'}
+          Mult -> vm' {memory = set a_imm $ (b_val * c_val) `mod` 32768, ptr = ptr'}
+          Mod -> vm' {memory = set a_imm $ b_val `mod` c_val, ptr = ptr'}
+          And -> vm' {memory = set a_imm $ b_val .&. c_val, ptr = ptr'}
+          Or -> vm' {memory = set a_imm $ b_val .|. c_val, ptr = ptr'}
+          Not -> vm' {memory = set a_imm $ complement b_val `mod` 32768, ptr = ptr'}
+          Rmem -> vm' {memory = set a_imm $ interpMemory memory $ S.index memory b_val, ptr = ptr'}
+          Wmem -> vm' {memory = set a_val b_val, ptr = ptr'}
+          Call -> vm' {stack = ptr' : stack, ptr = a_val}
+          Ret ->
+            case stack of
+              [] -> vm' {halted = True}
+              hd : stack' -> vm' {ptr = hd, stack = stack'}
+          In ->
+            let char :: Int = fromEnum $ head input
+             in vm' {memory = set a_imm char, input = tail input, ptr = ptr'}
+          Out -> vm' {ptr = ptr'}
+          Noop -> vm' {ptr = ptr'}
+      )
 
 -- iterate until the VM halts
 untilHalt :: VM -> IO VM
