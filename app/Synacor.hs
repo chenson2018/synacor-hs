@@ -210,34 +210,46 @@ untilHalt vm = step vm >>= untilHalt
 
 {- ORMOLU_DISABLE -}
 
-assembly :: Int -> [Word16] -> IO ()
-assembly _ [] = return ()
-assembly ptr (o : xs) =
+assembly :: Bool -> Int -> [Word16] -> IO ()
+assembly _ _ [] = return ()
+assembly str_start ptr (o : xs) =
   if o <= 21
     then
       let opcode :: Opcode = (toEnum . fromInteger . toInteger) o in 
-
+      
       -- print for each airty
-      let p0 tl       = putStrLn (printf "%06d: %s"          ptr (show opcode)                     ) >> assembly (ptr + 1) tl in
-      let p1 tl a     = putStrLn (printf "%06d: %s %s"       ptr (show opcode) (md a)              ) >> assembly (ptr + 2) tl in 
-      let p2 tl a b   = putStrLn (printf "%06d: %s %s %s"    ptr (show opcode) (md a) (md b)       ) >> assembly (ptr + 3) tl in
-      let p3 tl a b c = putStrLn (printf "%06d: %s %s %s %s" ptr (show opcode) (md a) (md b) (md c)) >> assembly (ptr + 4) tl in
+      let p0 tl       = putStrLn (printf "%06d: %s"          ptr (show opcode)                     ) >> assembly True (ptr + 1) tl in
+      let p1 tl a     = putStrLn (printf "%06d: %s %s"       ptr (show opcode) (md a)              ) >> assembly True (ptr + 2) tl in
+      let p2 tl a b   = putStrLn (printf "%06d: %s %s %s"    ptr (show opcode) (md a) (md b)       ) >> assembly True (ptr + 3) tl in
+      let p3 tl a b c = putStrLn (printf "%06d: %s %s %s %s" ptr (show opcode) (md a) (md b) (md c)) >> assembly True (ptr + 4) tl in
+      if opcode == Out
+        then do
+          let a : tl = xs
+          -- is this the start of the string?
+          when str_start $ putStr (printf "%06d: out \"" ptr)
 
-      case (width opcode, xs) of
-           (1, tl) -> p0 tl
-           (2, a : tl) -> p1 tl a
-           (3, a : b : tl) -> p2 tl a b
-           (4, a : b : c : tl) -> p3 tl a b c
-    else 
-      putStrLn (printf "%06d: data %s" ptr (md o)) >> assembly (ptr + 1) xs
-    where
-      md val | o == 19 = 
-                let c :: Char = (toEnum . fromInteger . toInteger) val in 
-                if c == '\n' then "'\\n'" else printf "'%c'" c
-             | val < 32768 = show val
-             | otherwise = printf "$%d" (val - 32768)
+          -- print the char
+          let c :: Char = (toEnum . fromInteger . toInteger) a
+          let s = if c == '\n' then "\\n" else [c]
+          putStr s
 
-{- ORMOLU_ENABLE -}
+          -- is this  the end of the string?
+          case tl of
+            tl'@(19 : _) -> assembly False (ptr + width opcode) tl'
+            tl'@(_ : _) -> putStr "\"\n" >> assembly True (ptr + width opcode) tl'
+            [] -> putStr "\"\n"
+        else case (width opcode, xs) of
+          (1, tl) -> p0 tl
+          (2, a : tl) -> p1 tl a
+          (3, a : b : tl) -> p2 tl a b
+          (4, a : b : c : tl) -> p3 tl a b c
+    else putStrLn (printf "%06d: data %s" ptr (md o)) >> assembly True (ptr + 1) xs
+  where
+    md val
+      | val < 32768 = show val
+      | otherwise = printf "$%d" (val - 32768)
+
+{- ORMOLU_DISABLE -}
 
 -- precomputed solution
 solution :: String

@@ -47,4 +47,4 @@ main =
         let vm = fromBinary autoOpt bin
         vm' <- untilHalt vm
         when printOpt (print vm')
-      else assembly 0 bin
+      else assembly True 0 bin
