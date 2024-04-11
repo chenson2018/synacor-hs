@@ -30,18 +30,18 @@ data VM = VM
     input :: [Char]
   }
 
--- given a value, interpret it as either a memory literal or register
-interpMemory :: M.Map Int Int -> Int -> Int
-interpMemory memory val
-  | val < 32768 = val
-  | otherwise = memory M.! val
-
 -- initialize a VM from a binary
 fromBinary :: Bool -> [Word16] -> VM
 fromBinary auto bin = VM {memory, ptr = 0, stack = [], halted = False, input}
   where
     input = if auto then solution else []
     memory = M.fromList $ zip [0 .. 32775] $ map (fromInteger . toInteger) bin ++ repeat 0
+
+-- given a value, interpret it as either a memory literal or register
+interpMemory :: M.Map Int Int -> Int -> Int
+interpMemory memory val
+  | val < 32768 = val
+  | otherwise = memory M.! val
 
 -- show just the registers when printing
 instance Show VM where
