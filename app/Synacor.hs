@@ -209,33 +209,28 @@ untilHalt vm = step vm >>= untilHalt
 
 assembly :: Bool -> Int -> [Word16] -> IO ()
 assembly _ _ [] = return ()
-assembly str_start ptr (o : xs) 
-  | o == 19 = 
-    do
-      let a : tl = xs
-      -- is this the start of the string?
-      when str_start $ putStr (printf "%06d: out \"" ptr)
-      -- print the char
-      let c :: Char = (toEnum . fromInteger . toInteger) a
-      let s = if c == '\n' then "\\n" else [c]
-      putStr s
-      -- is this  the end of the string?
-      case tl of
-        tl'@(19 : _) -> assembly False (ptr + 2) tl'
-        tl'@(_ : _) -> putStr "\"\n" >> assembly True (ptr + 2) tl'
-        [] -> putStr "\"\n"
+assembly str_start ptr (o : xs)
+  | o == 19 =
+      do
+        let a : tl = xs
+        -- is this the start of the string?
+        when str_start $ putStr (printf "%06d: out \"" ptr)
+        -- print the char
+        let c :: Char = (toEnum . fromInteger . toInteger) a
+        let s = if c == '\n' then "\\n" else [c]
+        putStr s
+        -- is this  the end of the string?
+        case tl of
+          tl'@(19 : _) -> assembly False (ptr + 2) tl'
+          tl'@(_ : _) -> putStr "\"\n" >> assembly True (ptr + 2) tl'
+          [] -> putStr "\"\n"
   | o <= 21 =
-      let opcode :: Opcode = (toEnum . fromInteger . toInteger) o in 
-      -- print for each airty
-      let p0 tl       = putStrLn (printf "%06d: %s"          ptr (show opcode)                     ) >> assembly True (ptr + 1) tl in
-      let p1 tl a     = putStrLn (printf "%06d: %s %s"       ptr (show opcode) (md a)              ) >> assembly True (ptr + 2) tl in
-      let p2 tl a b   = putStrLn (printf "%06d: %s %s %s"    ptr (show opcode) (md a) (md b)       ) >> assembly True (ptr + 3) tl in
-      let p3 tl a b c = putStrLn (printf "%06d: %s %s %s %s" ptr (show opcode) (md a) (md b) (md c)) >> assembly True (ptr + 4) tl in
+      let opcode :: Opcode = (toEnum . fromInteger . toInteger) o in
       case (width opcode, xs) of
-        (1, tl) -> p0 tl
-        (2, a : tl) -> p1 tl a
-        (3, a : b : tl) -> p2 tl a b
-        (4, a : b : c : tl) -> p3 tl a b c 
+        (1,             tl) -> putStrLn (printf "%06d: %s"          ptr (show opcode)                     ) >> assembly True (ptr + 1) tl
+        (2, a :         tl) -> putStrLn (printf "%06d: %s %s"       ptr (show opcode) (md a)              ) >> assembly True (ptr + 2) tl
+        (3, a : b :     tl) -> putStrLn (printf "%06d: %s %s %s"    ptr (show opcode) (md a) (md b)       ) >> assembly True (ptr + 3) tl
+        (4, a : b : c : tl) -> putStrLn (printf "%06d: %s %s %s %s" ptr (show opcode) (md a) (md b) (md c)) >> assembly True (ptr + 4) tl
   | otherwise = putStrLn (printf "%06d: data %s" ptr (md o)) >> assembly True (ptr + 1) xs
   where
     md val
