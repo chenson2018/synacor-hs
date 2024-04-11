@@ -219,7 +219,7 @@ assembly str_start ptr (o : xs)
         let c :: Char = (toEnum . fromInteger . toInteger) a
         let s = if c == '\n' then "\\n" else [c]
         putStr s
-        -- is this  the end of the string?
+        -- is this the end of the string?
         case tl of
           tl'@(19 : _) -> assembly False (ptr + 2) tl'
           tl'@(_ : _) -> putStr "\"\n" >> assembly True (ptr + 2) tl'
