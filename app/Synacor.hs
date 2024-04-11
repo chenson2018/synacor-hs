@@ -10,13 +10,17 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BL
 import Data.Char (toLower)
 import Data.Data
-import Data.Map qualified as M
+import Data.Foldable (toList)
+import Data.Sequence qualified as S
 import System.IO (hFlush, stdout)
 import System.Posix (fileSize, getFileStatus)
-import Text.Printf (printf)
+import Text.Printf (PrintfArg, printf)
 
 -- TODO:
 --  for step and assembly, check all bounds by using MaybeT
+--
+--  better handle the non-exhaustive case in assembly
+--    is nice for the admin command, but silently fails otherwise
 
 -- read a binary file to 16-bit words
 readBinary :: String -> IO [Word16]
@@ -27,7 +31,7 @@ readBinary file =
     readInts . BL.fromChunks . (: []) <$> BS.readFile file
 
 data VM = VM
-  { memory :: M.Map Int Int,
+  { memory :: S.Seq Int,
     ptr :: Int,
     stack :: [Int],
     halted :: Bool,
@@ -39,13 +43,13 @@ fromBinary :: Bool -> [Word16] -> VM
 fromBinary auto bin = VM {memory, ptr = 0, stack = [], halted = False, input}
   where
     input = if auto then solution else []
-    memory = M.fromList $ zip [0 .. 32775] $ map (fromInteger . toInteger) bin ++ repeat 0
+    memory = S.fromList $ take 32776 $ map (fromInteger . toInteger) bin ++ repeat 0
 
 -- given a value, interpret it as either a memory literal or register
-interpMemory :: M.Map Int Int -> Int -> Int
+interpMemory :: S.Seq Int -> Int -> Int
 interpMemory memory val
   | val < 32768 = val
-  | otherwise = memory M.! val
+  | otherwise = S.index memory val
 
 -- show just the registers when printing
 instance Show VM where
@@ -56,7 +60,7 @@ instance Show VM where
         (map (++ ": ") ["ptr", "registers", "stack"])
         [show ptr, show registers, show stack]
     where
-      registers = map (memory M.!) [32768 .. 32775]
+      registers = map (S.index memory) [32768 .. 32775]
 
 -- defining these for a bit of readability
 data Opcode
@@ -129,13 +133,24 @@ handleInput vm@(VM {memory, input = []}) =
           putStr "value: "
           hFlush stdout
           val <- read <$> getLine
-          handleInput vm {memory = M.insert reg val memory}
+          handleInput vm {memory = S.update reg val memory}
       "set ptr" ->
         do
           putStr "value: "
           hFlush stdout
-          ptr <- read <$> getLine
-          step vm {ptr}
+          ptr' <- read <$> getLine
+          step vm {ptr = ptr'}
+      "peek" ->
+        do
+          putStr "start: "
+          hFlush stdout
+          start <- read <$> getLine
+          putStr "stop: "
+          hFlush stdout
+          stop <- read <$> getLine
+          putStrLn ""
+          assembly True start $ filter (\k -> start <= k && k <= stop) $ toList memory
+          handleInput vm
       _ -> return (vm {input = s ++ ['\n']})
 handleInput vm = return vm
 
@@ -143,7 +158,7 @@ handleInput vm = return vm
 step :: VM -> IO VM
 step vm =
   do
-    let opcode = toEnum $ memory vm M.! ptr vm
+    let opcode = toEnum $ S.index (memory vm) (ptr vm)
 
     -- input is placed first, in case it changes the VM via an admin command!
     vm'@(VM {memory, ptr, stack, input}) <- case opcode of
@@ -151,9 +166,9 @@ step vm =
       _ -> return vm
 
     -- this is lazy, cool!
-    let a_imm = memory M.! (ptr + 1)
-    let b_imm = memory M.! (ptr + 2)
-    let c_imm = memory M.! (ptr + 3)
+    let a_imm = S.index memory (ptr + 1)
+    let b_imm = S.index memory (ptr + 2)
+    let c_imm = S.index memory (ptr + 3)
     let a_val = interpMemory memory a_imm
     let b_val = interpMemory memory b_imm
     let c_val = interpMemory memory c_imm
@@ -163,7 +178,7 @@ step vm =
       (putChar $ toEnum a_val)
 
     -- this is just for readability
-    let set addr val = M.insert addr val memory
+    let set addr val = S.update addr val memory
     let ptr' = ptr + width opcode
 
     let vm'' =
@@ -189,7 +204,7 @@ step vm =
               And -> vm' {memory = set a_imm $ b_val .&. c_val, ptr = ptr'}
               Or -> vm' {memory = set a_imm $ b_val .|. c_val, ptr = ptr'}
               Not -> vm' {memory = set a_imm $ complement b_val `mod` 32768, ptr = ptr'}
-              Rmem -> vm' {memory = set a_imm $ interpMemory memory $ memory M.! b_val, ptr = ptr'}
+              Rmem -> vm' {memory = set a_imm $ interpMemory memory $ S.index memory b_val, ptr = ptr'}
               Wmem -> vm' {memory = set a_val b_val, ptr = ptr'}
               Call -> vm' {stack = ptr' : stack, ptr = a_val}
               Ret ->
@@ -214,7 +229,7 @@ untilHalt vm = step vm >>= untilHalt
 
 {- ORMOLU_DISABLE -}
 
-assembly :: Bool -> Int -> [Word16] -> IO ()
+assembly :: (Num t, Eq t, Ord t, Integral t, Show t, PrintfArg t) => Bool -> Int -> [t] -> IO ()
 assembly _ _ [] = return ()
 assembly str_start ptr (o : xs)
   | o == 19 =
@@ -238,6 +253,7 @@ assembly str_start ptr (o : xs)
         (2, a :         tl) -> putStrLn (printf "%06d: %s %s"       ptr (show opcode) (md a)              ) >> assembly True (ptr + 2) tl
         (3, a : b :     tl) -> putStrLn (printf "%06d: %s %s %s"    ptr (show opcode) (md a) (md b)       ) >> assembly True (ptr + 3) tl
         (4, a : b : c : tl) -> putStrLn (printf "%06d: %s %s %s %s" ptr (show opcode) (md a) (md b) (md c)) >> assembly True (ptr + 4) tl
+        _ -> return ()
   | otherwise = putStrLn (printf "%06d: data %s" ptr (md o)) >> assembly True (ptr + 1) xs
   where
     md val
