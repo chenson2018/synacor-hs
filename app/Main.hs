@@ -4,7 +4,9 @@ import Control.Monad (when)
 import Options.Applicative
 import Synacor
 
-data Action = Convert | Run deriving (Eq)
+data Action
+  = Convert
+  | Run
 
 data Args = Args
   { path :: String,
