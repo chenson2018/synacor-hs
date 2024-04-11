@@ -31,20 +31,14 @@ data VM = VM
     input :: [Char]
   }
 
+-- show just the registers when printing
 instance Show VM where
-  show VM {memory, ptr, stack, input} =
-    "\n\nregisters: "
-      ++ show registers
-      ++ "\n"
-      ++ "ptr: "
-      ++ show ptr
-      ++ "\n"
-      ++ "stack: "
-      ++ show stack
-      ++ "\n"
-      ++ "input: "
-      ++ show input
-      ++ "\n"
+  show VM {memory, ptr, stack} =
+    unlines $
+      zipWith
+        (++)
+        (map (++ ": ") ["registers", "ptr", "stack"])
+        [show registers, show ptr, show stack]
     where
       registers = map (memory M.!) [32768 .. 32775]
 
