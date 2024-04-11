@@ -41,10 +41,11 @@ main =
   do
     Args {path, printOpt, autoOpt, actionOpt} <- execParser opts
     bin <- readBinary path
-    if actionOpt == Run
-      then do
-        putStrLn ""
-        let vm = fromBinary autoOpt bin
-        vm' <- untilHalt vm
-        when printOpt (print vm')
-      else assembly True 0 bin
+    case actionOpt of
+      Run ->
+        do
+          let vm = fromBinary autoOpt bin
+          vm' <- untilHalt vm
+          when printOpt (print vm')
+      Convert ->
+        assembly True 0 bin
