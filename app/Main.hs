@@ -19,7 +19,7 @@ args =
       )
     <*> switch
       ( long "print"
-          <> help "print source code"
+          <> help "print state on halt"
       )
 
 opts :: ParserInfo Args
@@ -32,6 +32,5 @@ main =
     Args {path, printOpt} <- execParser opts
     bin <- readBinary path
     let vm = fromBinary bin
-    when printOpt (print vm)
     vm' <- untilHalt vm
     when printOpt (print vm')

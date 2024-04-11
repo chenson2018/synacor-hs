@@ -3,9 +3,11 @@ module Synacor where
 import Control.Monad (replicateM, when)
 import Data.Binary (Word16)
 import Data.Binary.Get (getWord16le, runGet)
+import Data.Bits (complement, (.&.), (.|.))
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BL
 import Data.Map qualified as M
+import System.IO (hFlush, stdout)
 import System.Posix (fileSize, getFileStatus)
 
 readBinary :: String -> IO [Word16]
@@ -25,35 +27,166 @@ data VM = VM
   { memory :: M.Map Int Int,
     ptr :: Int,
     stack :: [Int],
-    halted :: Bool
+    halted :: Bool,
+    input :: [Char]
   }
-  deriving (Show)
+
+instance Show VM where
+  show VM {memory, ptr, stack, input} =
+    "\n\nregisters: "
+      ++ show registers
+      ++ "\n"
+      ++ "ptr: "
+      ++ show ptr
+      ++ "\n"
+      ++ "stack: "
+      ++ show stack
+      ++ "\n"
+      ++ "input: "
+      ++ show input
+      ++ "\n"
+    where
+      registers = map (memory M.!) [32768 .. 32775]
+
+-- defining these for a bit of readability
+data Opcode
+  = Halt
+  | Set
+  | Push
+  | Pop
+  | Eq
+  | Gt
+  | Jmp
+  | Jt
+  | Jf
+  | Add
+  | Mult
+  | Mod
+  | And
+  | Or
+  | Not
+  | Rmem
+  | Wmem
+  | Call
+  | Ret
+  | Out
+  | In
+  | Noop
+  deriving (Show, Enum, Eq)
 
 fromBinary :: [Word16] -> VM
-fromBinary bin = VM {memory, ptr = 0, stack = [], halted = False}
+fromBinary bin = VM {memory, ptr = 0, stack = [], halted = False, input = []}
   where
     memory = M.fromList $ zip [0 .. 32775] $ map (fromInteger . toInteger) bin ++ repeat 0
 
--- eventually should handle IO, Maybe, and State
-opLen :: Int -> Int
-opLen 0 = 1
-opLen 19 = 2
-opLen 21 = 1
+-- eventually should handle IO and Maybe (and State?)
+opLen :: Opcode -> Int
+opLen Halt = 1
+opLen Set = 3
+opLen Push = 2
+opLen Pop = 2
+opLen Eq = 4
+opLen Gt = 4
+opLen Jmp = 2
+opLen Jt = 3
+opLen Jf = 3
+opLen Add = 4
+opLen Mult = 4
+opLen Mod = 4
+opLen And = 4
+opLen Or = 4
+opLen Not = 3
+opLen Rmem = 3
+opLen Wmem = 3
+opLen Call = 2
+opLen Ret = 1
+opLen Out = 2
+opLen In = 2
+opLen Noop = 1
+
+-- given an address, return its immediate value and memory/register interpretation
+readMemory :: M.Map Int Int -> Int -> (Int, Int)
+readMemory memory ptr = (immediate, interp immediate)
+  where
+    immediate = memory M.! ptr
+    interp val
+      | val < 32768 = val
+      | otherwise = memory M.! val
 
 step :: VM -> IO VM
-step VM {memory, ptr, stack} =
+step vm@(VM {memory, ptr, stack, input}) =
   do
-    let opcode = memory M.! ptr
-    let ptr' = ptr + opLen opcode
-    let halted' = opcode == 0
+    -- TODO check failure
+    let opcode = toEnum $ memory M.! ptr
+
+    -- this is lazy, cool!
+    let (a_imm, a_val) = readMemory memory (ptr + 1)
+    let (b_imm, b_val) = readMemory memory (ptr + 2)
+    let (_, c_val) = readMemory memory (ptr + 3)
+
     when
-      (opcode == 19)
+      (opcode == Out)
       ( do
-          let a = memory M.! (ptr + 1)
-          let char :: Char = toEnum a
+          let char :: Char = toEnum a_val
           putStr [char]
       )
-    return $ VM {memory, ptr = ptr', stack, halted = halted'}
+
+    input' <- case opcode of
+      In ->
+        case input of
+          [] ->
+            do
+              putStr "> "
+              hFlush stdout
+              s <- getLine
+              return $ s ++ ['\n']
+          _ -> return input
+      _ -> return input
+
+    -- this is just for readability
+    let set addr val = M.insert addr val memory
+    let ptr' = ptr + opLen opcode
+    let vm' = vm {ptr = ptr', input = input'}
+
+    let vm'' =
+          ( case opcode of
+              Halt -> vm' {halted = True}
+              Set -> vm' {memory = set a_imm b_val}
+              Push -> vm' {stack = a_val : stack}
+              Pop ->
+                let hd : stack' = stack
+                 in vm' {memory = set a_imm hd, stack = stack'}
+              Eq ->
+                let val = if b_val == c_val then 1 else 0
+                 in vm' {memory = set a_imm val}
+              Gt ->
+                let val = if b_val > c_val then 1 else 0
+                 in vm' {memory = set a_imm val}
+              Jmp -> vm' {ptr = a_val}
+              Jt -> vm' {ptr = if a_val /= 0 then b_imm else ptr'}
+              Jf -> vm' {ptr = if a_val == 0 then b_imm else ptr'}
+              Add -> vm' {memory = set a_imm $ (b_val + c_val) `mod` 32768}
+              Mult -> vm' {memory = set a_imm $ (b_val * c_val) `mod` 32768}
+              Mod -> vm' {memory = set a_imm $ b_val `mod` c_val}
+              And -> vm' {memory = set a_imm $ b_val .&. c_val}
+              Or -> vm' {memory = set a_imm $ b_val .|. c_val}
+              Not -> vm' {memory = set a_imm $ complement b_val `mod` 32768}
+              Rmem -> vm' {memory = set a_imm (snd $ readMemory memory b_val)}
+              Wmem -> vm' {memory = set a_val b_val}
+              Call -> vm' {stack = ptr' : stack, ptr = a_val}
+              Ret ->
+                case stack of
+                  [] -> vm' {halted = True}
+                  hd : stack' -> vm {ptr = hd, stack = stack'}
+              In ->
+                let char :: Int = fromEnum $ head input'
+                 in let input'' = tail input'
+                     in vm' {memory = set a_imm char, input = input''}
+              Out -> vm'
+              Noop -> vm'
+          )
+
+    return vm''
 
 untilHalt :: VM -> IO VM
 untilHalt vm@(VM {halted = True}) = return vm
