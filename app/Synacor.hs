@@ -56,7 +56,6 @@ interpMemory memory val
   | val < 32768 = val
   | otherwise = S.index memory val
 
--- show just the registers when printing
 instance Show VM where
   show VM {memory, ptr, stack, input, bypass} =
     unlines $
