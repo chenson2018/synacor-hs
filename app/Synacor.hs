@@ -123,34 +123,34 @@ width Noop = 1
 {- ORMOLU_DISABLE -}
 
 -- parse admin commands
-admin :: VM -> Parser (IO (), VM)
+admin :: VM -> Parser (IO VM)
 admin vm@(VM {memory, bypass}) =
   do
     symbol "state"
-    return (print vm, vm)
+    return $ do print vm; return vm
     <|> 
   do
     symbol "set reg"
     reg <- (+ 32768) <$> natural
     val <- natural
-    return (return (), vm {memory = S.update reg val memory})
+    return $ return vm {memory = S.update reg val memory}
     <|> 
   do
     symbol "peek"
     start <- natural
     stop <- natural
     let p = assembly True start [val | (addr, val) <- zip [0 ..] $ toList memory, start <= addr && addr <= stop]
-    return (p, vm)
+    return $ do p; return vm
     <|> 
   do
     symbol "bypass"
     addr <- natural
     action <- many (sat (/= '\n'))
-    return (return (), vm {bypass = M.insert addr action bypass})
+    return $ return vm {bypass = M.insert addr action bypass}
   <|>
   do
     symbol "halt"
-    return (return (), vm {halted = True})
+    return $ return vm {halted = True}
 
 {- ORMOLU_DISABLE -}
 
@@ -162,7 +162,7 @@ handleInput vm@(VM {solution = sol : solution', input = []}) =
     -- sol might be an admin command
     case parse (admin vm) sol of
       Nothing -> return vm {solution = solution', input = sol}
-      Just ((p,vm'),_) -> do p; handleInput vm' {solution = solution'}
+      Just (io,_) -> do vm' <- io; handleInput vm' {solution = solution'}
 handleInput vm@(VM {solution = [], input = []}) =
   do
     -- if we need input and have nothing precomputed, prompt the user
@@ -172,7 +172,7 @@ handleInput vm@(VM {solution = [], input = []}) =
      -- again, it could be an admin command
     case parse (admin vm) action of
       Nothing -> return vm {input = action}
-      Just ((p,vm'),_) -> do p; handleInput vm'
+      Just (io,_) -> do vm' <- io; handleInput vm'
 handleInput vm = return vm
 
 -- an iteration of the virtual machine
@@ -182,7 +182,8 @@ step vm =
     then do
       let action = bypass vm M.! ptr vm
       let opcode = toEnum $ S.index (memory vm) (ptr vm)
-      let (_, vm') = fst $ fromJust $ parse (admin vm) action
+      let io = fst $ fromJust $ parse (admin vm) action
+      vm' <- io
       return vm' {ptr = width opcode + ptr vm}
     else do
       let opcode = toEnum $ S.index (memory vm) (ptr vm)
