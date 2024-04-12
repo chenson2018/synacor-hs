@@ -159,6 +159,7 @@ admin vm@(VM {memory, bypass}) =
 handleInput :: VM -> IO VM
 handleInput vm@(VM {solution = sol : solution', input = []}) =
   do
+    putStr $ "> " ++ sol
     case parse (admin vm) sol of
       Nothing -> return vm {solution = solution', input = sol}
       Just (io,_) -> do vm' <- io; handleInput vm' {solution = solution'}
