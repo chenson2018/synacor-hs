@@ -134,7 +134,7 @@ width Noop = 1
 
 -- parse admin commands
 admin :: VM -> Parser (IO VM)
-admin vm@(VM {_memory}) =
+admin vm =
   do
     symbol "state" >> return (do print vm; return vm)
     <|> 
@@ -148,7 +148,7 @@ admin vm@(VM {_memory}) =
     _ <- symbol "peek"
     start <- natural
     stop <- natural
-    let p = assembly True start [val | (addr, val) <- zip [0 ..] $ toList _memory, start <= addr && addr <= stop]
+    let p = assembly True start [val | (addr, val) <- zip [0 ..] $ toList $ _memory vm, start <= addr && addr <= stop]
     return $ do p; return vm
     <|> 
   do
@@ -156,11 +156,11 @@ admin vm@(VM {_memory}) =
     addr <- natural
     action <- many (sat (/= '\n'))
     return $ return (over bypass (M.insert addr action) vm)
-  <|>
-  do
+    <|> 
+  do 
     symbol "halt" >> return (return $ set halted True vm)
 
-{- ORMOLU_DISABLE -}
+{- ORMOLU_ENABLE -}
 
 -- take user input, including admin commands that can mutate the VM
 -- either use precomputed or user input, each potentially using an admin command
@@ -170,15 +170,15 @@ handleInput vm@(VM {_solution = sol : solution', _input = []}) =
     putStr $ "> " ++ sol
     case parse (admin vm) sol of
       Nothing -> return $ (set solution solution' . set input sol) vm
-      Just (io,_) -> io >>= (handleInput . set solution solution')
+      Just (io, _) -> io >>= (handleInput . set solution solution')
 handleInput vm@(VM {_solution = [], _input = []}) =
   do
-    putStr "> ";
-    hFlush stdout 
+    putStr "> "
+    hFlush stdout
     action <- (++ "\n") <$> getLine
     case parse (admin vm) action of
       Nothing -> return $ set input action vm
-      Just (io,_) -> io >>= handleInput
+      Just (io, _) -> io >>= handleInput
 handleInput vm = return vm
 
 -- an iteration of the virtual machine
@@ -212,40 +212,42 @@ step vm =
 
       -- this is just for readability
       let mem addr val = over memory (S.update addr val)
-      let inc = over ptr (+width opcode)
+      let inc = over ptr (+ width opcode)
 
-      return $ vm' & (
-       case opcode of
-        Halt -> set halted True
-        Set ->  inc . mem a_imm b_val
-        Push -> inc . over stack (a_val:)
-        Pop ->
-          let hd : stack' = _stack in
-          inc . mem a_imm hd . set stack stack'
-        Eq -> inc . mem a_imm (if b_val == c_val then 1 else 0)
-        Gt -> inc . mem a_imm (if b_val > c_val then 1 else 0)
-        Jmp -> set ptr a_val
-        Jt -> if a_val /= 0 then set ptr b_imm else inc
-        Jf -> if a_val == 0 then set ptr b_imm else inc
-        Add -> inc . mem a_imm ((b_val + c_val) `mod` 32768)
-        Mult -> inc . mem a_imm ((b_val * c_val) `mod` 32768 )
-        Mod -> inc . mem a_imm (b_val `mod` c_val)
-        And -> inc . mem a_imm ( b_val .&. c_val )
-        Or -> inc . mem a_imm ( b_val .|. c_val )
-        Not -> inc . mem a_imm ( complement b_val `mod` 32768 )
-        Rmem -> inc . mem a_imm ( interpMemory _memory $ S.index _memory b_val )
-        Wmem -> inc . mem a_val b_val
-        Call -> set ptr a_val . over stack (_ptr + width opcode :)
-        Ret ->
-          case _stack of
-            [] -> set halted True
-            hd : stack' -> set ptr hd . set stack stack'
-        In ->
-          case _input of
-            hd : tl -> inc . set input tl . mem a_imm (fromEnum hd)
-            [] -> const vm
-        Out -> inc
-        Noop -> inc)
+      return $
+        vm'
+          & ( case opcode of
+                Halt -> set halted True
+                Set -> inc . mem a_imm b_val
+                Push -> inc . over stack (a_val :)
+                Pop ->
+                  let hd : stack' = _stack
+                   in inc . mem a_imm hd . set stack stack'
+                Eq -> inc . mem a_imm (if b_val == c_val then 1 else 0)
+                Gt -> inc . mem a_imm (if b_val > c_val then 1 else 0)
+                Jmp -> set ptr a_val
+                Jt -> if a_val /= 0 then set ptr b_imm else inc
+                Jf -> if a_val == 0 then set ptr b_imm else inc
+                Add -> inc . mem a_imm ((b_val + c_val) `mod` 32768)
+                Mult -> inc . mem a_imm ((b_val * c_val) `mod` 32768)
+                Mod -> inc . mem a_imm (b_val `mod` c_val)
+                And -> inc . mem a_imm (b_val .&. c_val)
+                Or -> inc . mem a_imm (b_val .|. c_val)
+                Not -> inc . mem a_imm (complement b_val `mod` 32768)
+                Rmem -> inc . mem a_imm (interpMemory _memory $ S.index _memory b_val)
+                Wmem -> inc . mem a_val b_val
+                Call -> set ptr a_val . over stack (_ptr + width opcode :)
+                Ret ->
+                  case _stack of
+                    [] -> set halted True
+                    hd : stack' -> set ptr hd . set stack stack'
+                In ->
+                  case _input of
+                    hd : tl -> inc . set input tl . mem a_imm (fromEnum hd)
+                    [] -> const vm
+                Out -> inc
+                Noop -> inc
+            )
 
 -- iterate until the VM halts
 untilHalt :: VM -> IO VM
@@ -287,12 +289,13 @@ assembly str_start ptr' (o : xs)
       | val < 32768 = show val
       | otherwise = printf "$%d" (val - 32768)
 
-{- ORMOLU_DISABLE -}
+{- ORMOLU_ENABLE -}
 
 -- precomputed solution
 precomputed :: [String]
 precomputed =
-    map (++ "\n")
+  map
+    (++ "\n")
     [ "take tablet",
       "use tablet",
       "doorway",
@@ -358,16 +361,16 @@ precomputed =
       "north",
       "north",
       "take orb",
-      "north", 
-      "east", 
-      "east", 
-      "north", 
-      "west", 
-      "south",
-      "east", 
-      "east", 
+      "north",
+      "east",
+      "east",
+      "north",
       "west",
-      "north", 
+      "south",
+      "east",
+      "east",
+      "west",
+      "north",
       "north",
       "east",
       "vault",
@@ -375,4 +378,4 @@ precomputed =
       "use mirror",
       "halt",
       "done!"
-      ]
+    ]
