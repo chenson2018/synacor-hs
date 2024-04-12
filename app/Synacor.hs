@@ -148,6 +148,10 @@ admin vm@(VM {memory, bypass}) =
     addr <- natural
     action <- many (sat (/= '\n'))
     return (return (), vm {bypass = M.insert addr action bypass})
+  <|>
+  do
+    symbol "halt"
+    return (return (), vm {halted = True})
 
 {- ORMOLU_DISABLE -}
 
@@ -353,5 +357,22 @@ precomputed =
       "north",
       "north",
       "north",
-      "take orb"
-    ]
+      "take orb",
+      "north", 
+      "east", 
+      "east", 
+      "north", 
+      "west", 
+      "south",
+      "east", 
+      "east", 
+      "west",
+      "north", 
+      "north",
+      "east",
+      "vault",
+      "take mirror",
+      "use mirror",
+      "halt",
+      "done!"
+      ]
