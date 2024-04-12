@@ -155,21 +155,18 @@ admin vm@(VM {memory, bypass}) =
 {- ORMOLU_DISABLE -}
 
 -- take user input, including admin commands that can mutate the VM
+-- either use precomputed or user input, each potentially using an admin command
 handleInput :: VM -> IO VM
 handleInput vm@(VM {solution = sol : solution', input = []}) =
   do
-    -- if we require input and have something precomputed, use it
-    -- sol might be an admin command
     case parse (admin vm) sol of
       Nothing -> return vm {solution = solution', input = sol}
       Just (io,_) -> do vm' <- io; handleInput vm' {solution = solution'}
 handleInput vm@(VM {solution = [], input = []}) =
   do
-    -- if we need input and have nothing precomputed, prompt the user
     putStr "> ";
     hFlush stdout;
     action <- (++ "\n") <$> getLine
-     -- again, it could be an admin command
     case parse (admin vm) action of
       Nothing -> return vm {input = action}
       Just (io,_) -> do vm' <- io; handleInput vm'
