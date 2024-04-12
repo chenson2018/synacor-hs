@@ -12,7 +12,6 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BL
 import Data.Char (toLower)
 import Data.Data
-import Data.Foldable (toList)
 import Data.Map qualified as M
 import Data.Maybe (fromJust)
 import Data.Sequence qualified as S
