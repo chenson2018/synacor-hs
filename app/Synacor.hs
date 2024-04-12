@@ -148,7 +148,7 @@ admin vm =
     _ <- symbol "peek"
     start <- natural
     stop <- natural
-    let p = assembly True start [val | (addr, val) <- zip [0 ..] $ toList $ _memory vm, start <= addr && addr <= stop]
+    let p = assembly True start $ map (S.index $ _memory vm) [start .. stop]  
     return $ do p; return vm
     <|> 
   do
