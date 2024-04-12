@@ -11,7 +11,10 @@ import Data.ByteString.Lazy qualified as BL
 import Data.Char (toLower)
 import Data.Data
 import Data.Foldable (toList)
+import Data.Map qualified as M
+import Data.Maybe (fromJust)
 import Data.Sequence qualified as S
+import Parsing
 import System.IO (hFlush, stdout)
 import System.Posix (fileSize, getFileStatus)
 import Text.Printf (PrintfArg, printf)
@@ -35,12 +38,13 @@ data VM = VM
     ptr :: Int,
     stack :: [Int],
     halted :: Bool,
-    input :: [Char]
+    input :: [Char],
+    bypass :: M.Map Int String
   }
 
 -- initialize a VM from a binary
 fromBinary :: Bool -> [Word16] -> VM
-fromBinary auto bin = VM {memory, ptr = 0, stack = [], halted = False, input}
+fromBinary auto bin = VM {memory, ptr = 0, stack = [], halted = False, input, bypass = M.empty}
   where
     input = if auto then solution else []
     memory = S.fromList $ take 32776 $ map (fromInteger . toInteger) bin ++ repeat 0
@@ -53,12 +57,12 @@ interpMemory memory val
 
 -- show just the registers when printing
 instance Show VM where
-  show VM {memory, ptr, stack} =
+  show VM {memory, ptr, stack, input, bypass} =
     unlines $
       zipWith
         (++)
-        (map (++ ": ") ["ptr", "registers", "stack"])
-        [show ptr, show registers, show stack]
+        (map (++ ": ") ["ptr", "registers", "stack", "input", "bypass"])
+        [show ptr, show registers, show stack, show input, show bypass]
     where
       registers = map (S.index memory) [32768 .. 32775]
 
@@ -116,107 +120,128 @@ width Out = 2
 width In = 2
 width Noop = 1
 
--- take user input, including admin commands that can mutate the VM
-handleInput :: VM -> IO VM
-handleInput vm@(VM {memory, input = []}) =
+{- ORMOLU_DISABLE -}
+
+-- parse admin commands
+admin :: VM -> Parser (IO (), VM)
+admin vm@(VM {memory, bypass}) =
   do
-    putStr "> "
-    hFlush stdout
-    s <- getLine
-    case s of
-      "admin" -> do print vm; handleInput vm
-      "set reg" ->
-        do
-          putStr "register to edit: "
-          hFlush stdout
-          reg <- (+ 32768) . read <$> getLine
-          putStr "value: "
-          hFlush stdout
-          val <- read <$> getLine
-          handleInput vm {memory = S.update reg val memory}
-      "set ptr" ->
-        do
-          putStr "value: "
-          hFlush stdout
-          ptr' <- read <$> getLine
-          step vm {ptr = ptr'}
-      "peek" ->
-        do
-          putStr "start: "
-          hFlush stdout
-          start <- read <$> getLine
-          putStr "stop: "
-          hFlush stdout
-          stop <- read <$> getLine
-          putStrLn ""
-          assembly True start [val | (addr, val) <- zip [0 ..] $ toList memory, start <= addr && addr <= stop]
-          handleInput vm
-      _ -> return (vm {input = s ++ ['\n']})
-handleInput vm = return vm
+    symbol "state"
+    return (print vm, vm)
+    <|> 
+  do
+    symbol "set reg"
+    reg <- (+ 32768) <$> natural
+    val <- natural
+    return (return (), vm {memory = S.update reg val memory})
+    <|> 
+  do
+    symbol "peek"
+    start <- natural
+    stop <- natural
+    let p = assembly True start [val | (addr, val) <- zip [0 ..] $ toList memory, start <= addr && addr <= stop]
+    return (p, vm)
+    <|> 
+  do
+    symbol "bypass"
+    addr <- natural
+    action <- many (sat (/= '\n'))
+    return (return (), vm {bypass = M.insert addr action bypass})
+
+{- ORMOLU_DISABLE -}
+
+-- take user input, including admin commands that can mutate the VM
+-- a bit messy because of the automation
+handleInput :: VM -> IO VM
+-- when input buffer is empty, get it from the user
+handleInput vm@(VM {input = []}) =
+  do
+    putStr "> ";
+    hFlush stdout;
+    action <- (++ "\n") <$> getLine
+    -- if admin input, recurse
+    -- if a regular command, don't, so that we start processing characters
+    case parse (admin vm) action of
+      Nothing -> return vm {input = action}
+      Just ((p,vm'),_) -> do p; handleInput vm'
+-- we might also need to intercept admin commands from precomputed input, we do so here...
+handleInput vm@(VM{input}) = 
+  do
+    let (action, _ : input') = span (/= '\n') input
+    case parse (admin vm) action of
+      Nothing -> return vm
+      Just ((p,vm'),_) -> do p; handleInput vm' {input = input'}
 
 -- an iteration of the virtual machine
 step :: VM -> IO VM
 step vm =
-  do
-    let opcode = toEnum $ S.index (memory vm) (ptr vm)
+  if M.member (ptr vm) (bypass vm)
+    then do
+      let action = bypass vm M.! ptr vm
+      let opcode = toEnum $ S.index (memory vm) (ptr vm)
+      let (_, vm') = fst $ fromJust $ parse (admin vm) action
+      return vm' {ptr = width opcode + ptr vm}
+    else do
+      let opcode = toEnum $ S.index (memory vm) (ptr vm)
 
-    -- input is placed first, in case it changes the VM via an admin command!
-    vm'@(VM {memory, ptr, stack, input}) <- case opcode of
-      In -> handleInput vm
-      _ -> return vm
+      -- input is placed first, in case it changes the VM via an admin command!
+      vm'@(VM {memory, ptr, stack, input}) <- case opcode of
+        In -> handleInput vm
+        _ -> return vm
 
-    -- this is lazy, cool!
-    let a_imm = S.index memory (ptr + 1)
-    let b_imm = S.index memory (ptr + 2)
-    let c_imm = S.index memory (ptr + 3)
-    let a_val = interpMemory memory a_imm
-    let b_val = interpMemory memory b_imm
-    let c_val = interpMemory memory c_imm
+      -- this is lazy, cool!
+      let a_imm = S.index memory (ptr + 1)
+      let b_imm = S.index memory (ptr + 2)
+      let c_imm = S.index memory (ptr + 3)
+      let a_val = interpMemory memory a_imm
+      let b_val = interpMemory memory b_imm
+      let c_val = interpMemory memory c_imm
 
-    when
-      (opcode == Out)
-      (putChar $ toEnum a_val)
+      when
+        (opcode == Out)
+        (putChar $ toEnum a_val)
 
-    -- this is just for readability
-    let set addr val = S.update addr val memory
-    let ptr' = ptr + width opcode
+      -- this is just for readability
+      let set addr val = S.update addr val memory
+      let ptr' = ptr + width opcode
 
-    return
-      ( case opcode of
-          Halt -> vm' {halted = True}
-          Set -> vm' {memory = set a_imm b_val, ptr = ptr'}
-          Push -> vm' {stack = a_val : stack, ptr = ptr'}
-          Pop ->
-            let hd : stack' = stack
-             in vm' {memory = set a_imm hd, stack = stack', ptr = ptr'}
-          Eq ->
-            let val = if b_val == c_val then 1 else 0
-             in vm' {memory = set a_imm val, ptr = ptr'}
-          Gt ->
-            let val = if b_val > c_val then 1 else 0
-             in vm' {memory = set a_imm val, ptr = ptr'}
-          Jmp -> vm' {ptr = a_val}
-          Jt -> vm' {ptr = if a_val /= 0 then b_imm else ptr'}
-          Jf -> vm' {ptr = if a_val == 0 then b_imm else ptr'}
-          Add -> vm' {memory = set a_imm $ (b_val + c_val) `mod` 32768, ptr = ptr'}
-          Mult -> vm' {memory = set a_imm $ (b_val * c_val) `mod` 32768, ptr = ptr'}
-          Mod -> vm' {memory = set a_imm $ b_val `mod` c_val, ptr = ptr'}
-          And -> vm' {memory = set a_imm $ b_val .&. c_val, ptr = ptr'}
-          Or -> vm' {memory = set a_imm $ b_val .|. c_val, ptr = ptr'}
-          Not -> vm' {memory = set a_imm $ complement b_val `mod` 32768, ptr = ptr'}
-          Rmem -> vm' {memory = set a_imm $ interpMemory memory $ S.index memory b_val, ptr = ptr'}
-          Wmem -> vm' {memory = set a_val b_val, ptr = ptr'}
-          Call -> vm' {stack = ptr' : stack, ptr = a_val}
-          Ret ->
-            case stack of
-              [] -> vm' {halted = True}
-              hd : stack' -> vm' {ptr = hd, stack = stack'}
-          In ->
-            let char :: Int = fromEnum $ head input
-             in vm' {memory = set a_imm char, input = tail input, ptr = ptr'}
-          Out -> vm' {ptr = ptr'}
-          Noop -> vm' {ptr = ptr'}
-      )
+      return
+        ( case opcode of
+            Halt -> vm' {halted = True}
+            Set -> vm' {memory = set a_imm b_val, ptr = ptr'}
+            Push -> vm' {stack = a_val : stack, ptr = ptr'}
+            Pop ->
+              let hd : stack' = stack
+               in vm' {memory = set a_imm hd, stack = stack', ptr = ptr'}
+            Eq ->
+              let val = if b_val == c_val then 1 else 0
+               in vm' {memory = set a_imm val, ptr = ptr'}
+            Gt ->
+              let val = if b_val > c_val then 1 else 0
+               in vm' {memory = set a_imm val, ptr = ptr'}
+            Jmp -> vm' {ptr = a_val}
+            Jt -> vm' {ptr = if a_val /= 0 then b_imm else ptr'}
+            Jf -> vm' {ptr = if a_val == 0 then b_imm else ptr'}
+            Add -> vm' {memory = set a_imm $ (b_val + c_val) `mod` 32768, ptr = ptr'}
+            Mult -> vm' {memory = set a_imm $ (b_val * c_val) `mod` 32768, ptr = ptr'}
+            Mod -> vm' {memory = set a_imm $ b_val `mod` c_val, ptr = ptr'}
+            And -> vm' {memory = set a_imm $ b_val .&. c_val, ptr = ptr'}
+            Or -> vm' {memory = set a_imm $ b_val .|. c_val, ptr = ptr'}
+            Not -> vm' {memory = set a_imm $ complement b_val `mod` 32768, ptr = ptr'}
+            Rmem -> vm' {memory = set a_imm $ interpMemory memory $ S.index memory b_val, ptr = ptr'}
+            Wmem -> vm' {memory = set a_val b_val, ptr = ptr'}
+            Call -> vm' {stack = ptr' : stack, ptr = a_val}
+            Ret ->
+              case stack of
+                [] -> vm' {halted = True}
+                hd : stack' -> vm' {ptr = hd, stack = stack'}
+            In ->
+              case input of
+                hd : tl -> vm' {memory = set a_imm $ fromEnum hd, input = tl, ptr = ptr'}
+                [] -> vm
+            Out -> vm' {ptr = ptr'}
+            Noop -> vm' {ptr = ptr'}
+        )
 
 -- iterate until the VM halts
 untilHalt :: VM -> IO VM
@@ -315,5 +340,8 @@ solution =
       "use corroded coin",
       "north",
       "take teleporter",
+      "use teleporter",
+      "set reg 7 25734",
+      "bypass 5511 set reg 0 6",
       "use teleporter"
     ]
