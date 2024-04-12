@@ -105,7 +105,8 @@ executable synacor
                       bytestring,
                       binary,
                       unix,
-                      containers
+                      containers,
+                      lens
 
     -- Directories containing source files.
     hs-source-dirs:   app

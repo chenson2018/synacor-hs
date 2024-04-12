@@ -93,8 +93,8 @@ char x = sat (== x)
 string :: String -> Parser String
 string [] = return []
 string (x : xs) = do
-  char x
-  string xs
+  _ <- char x
+  _ <- string xs
   return (x : xs)
 
 ident :: Parser String
@@ -111,7 +111,7 @@ nat = do
 int :: Parser Int
 int =
   do
-    char '-'
+    _ <- char '-'
     n <- nat
     return (-n)
     <|> nat
@@ -120,7 +120,7 @@ int =
 
 space :: Parser ()
 space = do
-  many (sat isSpace)
+  _ <- many (sat isSpace)
   return ()
 
 token :: Parser a -> Parser a
@@ -147,7 +147,7 @@ list sep parseT =
   many
     ( do
         t <- parseT
-        symbol sep
+        _ <- symbol sep
         return t
         <|> parseT
     )
