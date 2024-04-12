@@ -38,15 +38,16 @@ data VM = VM
     ptr :: Int,
     stack :: [Int],
     halted :: Bool,
-    input :: [Char],
+    input :: String,
+    solution :: [String],
     bypass :: M.Map Int String
   }
 
 -- initialize a VM from a binary
 fromBinary :: Bool -> [Word16] -> VM
-fromBinary auto bin = VM {memory, ptr = 0, stack = [], halted = False, input, bypass = M.empty}
+fromBinary auto bin = VM {memory, ptr = 0, stack = [], halted = False, input = [], bypass = M.empty, solution}
   where
-    input = if auto then solution else []
+    solution = if auto then precomputed else []
     memory = S.fromList $ take 32776 $ map (fromInteger . toInteger) bin ++ repeat 0
 
 -- given a value, interpret it as either a memory literal or register
@@ -151,26 +152,25 @@ admin vm@(VM {memory, bypass}) =
 {- ORMOLU_DISABLE -}
 
 -- take user input, including admin commands that can mutate the VM
--- a bit messy because of the automation
 handleInput :: VM -> IO VM
--- when input buffer is empty, get it from the user
-handleInput vm@(VM {input = []}) =
+handleInput vm@(VM {solution = sol : solution', input = []}) =
   do
+    -- if we require input and have something precomputed, use it
+    -- sol might be an admin command
+    case parse (admin vm) sol of
+      Nothing -> return vm {solution = solution', input = sol}
+      Just ((p,vm'),_) -> do p; handleInput vm' {solution = solution'}
+handleInput vm@(VM {solution = [], input = []}) =
+  do
+    -- if we need input and have nothing precomputed, prompt the user
     putStr "> ";
     hFlush stdout;
     action <- (++ "\n") <$> getLine
-    -- if admin input, recurse
-    -- if a regular command, don't, so that we start processing characters
+     -- again, it could be an admin command
     case parse (admin vm) action of
       Nothing -> return vm {input = action}
       Just ((p,vm'),_) -> do p; handleInput vm'
--- we might also need to intercept admin commands from precomputed input, we do so here...
-handleInput vm@(VM{input}) = 
-  do
-    let (action, _ : input') = span (/= '\n') input
-    case parse (admin vm) action of
-      Nothing -> return vm
-      Just ((p,vm'),_) -> do p; handleInput vm' {input = input'}
+handleInput vm = return vm
 
 -- an iteration of the virtual machine
 step :: VM -> IO VM
@@ -286,9 +286,9 @@ assembly str_start ptr (o : xs)
 {- ORMOLU_DISABLE -}
 
 -- precomputed solution
-solution :: String
-solution =
-  unlines
+precomputed :: [String]
+precomputed =
+    map (++ "\n")
     [ "take tablet",
       "use tablet",
       "doorway",
