@@ -343,5 +343,15 @@ solution =
       "use teleporter",
       "set reg 7 25734",
       "bypass 5511 set reg 0 6",
-      "use teleporter"
+      "use teleporter",
+      "north",
+      "north",
+      "north",
+      "north",
+      "north",
+      "north",
+      "north",
+      "north",
+      "north",
+      "take orb"
     ]
