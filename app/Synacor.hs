@@ -49,10 +49,16 @@ $(makeLenses ''VM)
 
 -- initialize a VM from a binary
 fromBinary :: Bool -> [Word16] -> VM
-fromBinary auto bin = VM {_memory, _ptr = 0, _stack = [], _halted = False, _input = [], _bypass = M.empty, _solution}
-  where
-    _solution = if auto then precomputed else []
-    _memory = S.fromList $ take 32776 $ map (fromInteger . toInteger) bin ++ repeat 0
+fromBinary auto bin =
+  VM
+    { _memory = S.fromList $ take 32776 $ map (fromInteger . toInteger) bin ++ repeat 0,
+      _ptr = 0,
+      _stack = [],
+      _halted = False,
+      _input = [],
+      _bypass = M.empty,
+      _solution = if auto then precomputed else []
+    }
 
 -- given a value, interpret it as either a memory literal or register
 interpMemory :: S.Seq Int -> Int -> Int
