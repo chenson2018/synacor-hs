@@ -275,10 +275,10 @@ step vm =
       return $ mutate vm'
 
 -- generic monad iteration
-bindUntil :: (Monad m) => (a -> m a) -> (a -> Bool) -> a -> m a
-bindUntil iter cond m
+bindUntil :: (Monad m) => (a -> Bool) -> (a -> m a) -> a -> m a
+bindUntil cond iter m
   | cond m = return m
-  | otherwise = iter m >>= bindUntil iter cond
+  | otherwise = iter m >>= bindUntil cond iter
 
 -- a function for printing assembly from a binary
 
