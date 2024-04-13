@@ -284,7 +284,7 @@ bindUntil cond iter a
 
 {- ORMOLU_DISABLE -}
 
-assembly :: (Integral t, Show t, PrintfArg t) => Bool -> Int -> [t] -> IO ()
+assembly :: (Integral t, PrintfArg t) => Bool -> Int -> [t] -> IO ()
 assembly _ _ [] = return ()
 assembly str_start ptr' (o : xs)
   | o == 19 =
@@ -302,18 +302,20 @@ assembly str_start ptr' (o : xs)
           tl'@(_ : _) -> putStr "\"\n" >> assembly True (ptr' + 2) tl'
           [] -> putStr "\"\n"
   | o <= 21 =
-      let opcode :: Opcode = (toEnum . fromInteger . toInteger) o in
-      case (width opcode, xs) of
-        (1,             tl) -> putStrLn (printf "%06d: %s"          ptr' (show opcode)                     ) >> assembly True (ptr' + 1) tl
-        (2, a :         tl) -> putStrLn (printf "%06d: %s %s"       ptr' (show opcode) (md a)              ) >> assembly True (ptr' + 2) tl
-        (3, a : b :     tl) -> putStrLn (printf "%06d: %s %s %s"    ptr' (show opcode) (md a) (md b)       ) >> assembly True (ptr' + 3) tl
-        (4, a : b : c : tl) -> putStrLn (printf "%06d: %s %s %s %s" ptr' (show opcode) (md a) (md b) (md c)) >> assembly True (ptr' + 4) tl
-        _ -> return ()
-  | otherwise = putStrLn (printf "%06d: data %s" ptr' (md o)) >> assembly True (ptr' + 1) xs
-  where
-    md val
-      | val < 32768 = show val
-      | otherwise = printf "$%d" (val - 32768)
+      do
+        let opcode :: Opcode = (toEnum . fromInteger . toInteger) o
+
+        let md :: (Integral t, PrintfArg t) => t -> String
+            md val | val < 32768 = printf  "%d"  val
+                   | otherwise   = printf "$%d" (val - 32768)
+
+        case (width opcode, xs) of
+          (1,             tl) -> putStrLn (printf "%06d: %s"          ptr' (show opcode)                     ) >> assembly True (ptr' + 1) tl
+          (2, a :         tl) -> putStrLn (printf "%06d: %s %s"       ptr' (show opcode) (md a)              ) >> assembly True (ptr' + 2) tl
+          (3, a : b :     tl) -> putStrLn (printf "%06d: %s %s %s"    ptr' (show opcode) (md a) (md b)       ) >> assembly True (ptr' + 3) tl
+          (4, a : b : c : tl) -> putStrLn (printf "%06d: %s %s %s %s" ptr' (show opcode) (md a) (md b) (md c)) >> assembly True (ptr' + 4) tl
+          _ -> return ()
+  | otherwise = putStrLn (printf "%06d: data %d" ptr' o) >> assembly True (ptr' + 1) xs
 
 {- ORMOLU_ENABLE -}
 
