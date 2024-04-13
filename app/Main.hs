@@ -48,7 +48,7 @@ main =
       Run ->
         do
           let vm = fromBinary autoOpt bin
-          vm' <- runMaybeT (untilHalt vm)
+          vm' <- runMaybeT (bindUntil step _halted vm)
           when printOpt (print vm')
       Convert ->
         assembly True 0 bin

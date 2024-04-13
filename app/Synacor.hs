@@ -274,10 +274,11 @@ step vm =
 
       return $ mutate vm'
 
--- iterate until the VM halts
-untilHalt :: VM -> MaybeT IO VM
-untilHalt vm@(VM {_halted = True}) = return vm
-untilHalt vm = step vm >>= untilHalt
+-- generic monad iteration
+bindUntil :: (Monad m) => (a -> m a) -> (a -> Bool) -> a -> m a
+bindUntil iter cond m
+  | cond m = return m
+  | otherwise = iter m >>= bindUntil iter cond
 
 -- a function for printing assembly from a binary
 
