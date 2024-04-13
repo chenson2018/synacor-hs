@@ -182,7 +182,16 @@ handleInput vm@(VM {_solution = [], _input = []}) =
       Just (io, _) -> io >>= handleInput
 handleInput vm = return vm
 
--- an iteration of the virtual machine
+{-
+an iteration of the virtual machine
+by using MaybeT, we stop execution at any point we get an invalid instruction
+could rewrite to give informative error messages
+
+I tried to cover the following cases:
+  -- instruction pointer landing on a non-opcode
+  -- reading/writing out of bounds
+  -- popping an empty stack
+-}
 step :: VM -> MaybeT IO VM
 step vm =
   if M.member (_ptr vm) (_bypass vm)
