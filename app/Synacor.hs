@@ -299,8 +299,7 @@ assembly str_start ptr' (o : xs)
         -- is this the end of the string?
         case tl of
           19 : _ -> assembly False (ptr' + 2) tl
-          _ : _ -> putStr "\"\n" >> assembly True (ptr' + 2) tl
-          [] -> putStr "\"\n"
+          _ -> putStr "\"\n" >> assembly True (ptr' + 2) tl
   | o <= 21 =
       do
         let opcode :: Opcode = (toEnum . fromInteger . toInteger) o
