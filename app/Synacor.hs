@@ -5,6 +5,8 @@ module Synacor where
 
 import Control.Lens
 import Control.Monad (replicateM, when)
+import Control.Monad.IO.Class (MonadIO (liftIO))
+import Control.Monad.Trans.Maybe
 import Data.Binary (Word16)
 import Data.Binary.Get (getWord16le, runGet)
 import Data.Bits (complement, (.&.), (.|.))
@@ -13,18 +15,12 @@ import Data.ByteString.Lazy qualified as BL
 import Data.Char (toLower)
 import Data.Data
 import Data.Map qualified as M
-import Data.Maybe (fromJust)
+import Data.Sequence (Seq, (!?))
 import Data.Sequence qualified as S
 import Parsing
 import System.IO (hFlush, stdout)
 import System.Posix (fileSize, getFileStatus)
 import Text.Printf (PrintfArg, printf)
-
--- TODO:
---  for step and assembly, check all bounds by using MaybeT
---
---  better handle the non-exhaustive case in assembly
---    is nice for the admin command, but silently fails otherwise
 
 -- read a binary file to 16-bit words
 readBinary :: String -> IO [Word16]
@@ -35,7 +31,7 @@ readBinary file =
     readInts . BL.fromChunks . (: []) <$> BS.readFile file
 
 data VM = VM
-  { _memory :: S.Seq Int,
+  { _memory :: Seq Int,
     _ptr :: Int,
     _stack :: [Int],
     _halted :: Bool,
@@ -60,10 +56,10 @@ fromBinary auto bin =
     }
 
 -- given a value, interpret it as either a memory literal or register
-interpMemory :: S.Seq Int -> Int -> Int
+interpMemory :: Seq Int -> Int -> Maybe Int
 interpMemory memory' val
-  | val < 32768 = val
-  | otherwise = S.index memory' val
+  | val < 32768 = Just val
+  | otherwise = memory' !? val
 
 instance Show VM where
   show VM {_memory, _ptr, _stack, _input, _bypass} =
@@ -100,6 +96,11 @@ data Opcode
   | In
   | Noop
   deriving (Typeable, Data, Enum, Eq)
+
+fromRaw :: Int -> Maybe Opcode
+fromRaw o
+  | o <= 21 = Just $ toEnum o
+  | otherwise = Nothing
 
 instance Show Opcode where
   show = map toLower . showConstr . toConstr
@@ -141,6 +142,7 @@ admin vm =
     _ <- symbol "set reg"
     reg <- (+ 32768) <$> natural
     val <- natural
+    -- this doesn't check bounds!
     return $ return (over memory (S.update reg val) vm)
     <|> 
   do
@@ -181,75 +183,90 @@ handleInput vm@(VM {_solution = [], _input = []}) =
 handleInput vm = return vm
 
 -- an iteration of the virtual machine
-step :: VM -> IO VM
+step :: VM -> MaybeT IO VM
 step vm =
   if M.member (_ptr vm) (_bypass vm)
     then do
-      let action = _bypass vm M.! _ptr vm
-      let opcode = toEnum $ S.index (_memory vm) (_ptr vm)
-      let io = fst $ fromJust $ parse (admin vm) action
-      over ptr (+ width opcode) <$> io
+      action <- hoistMaybe $ _bypass vm M.!? _ptr vm
+      raw_opcode <- hoistMaybe $ _memory vm !? _ptr vm
+      opcode <- hoistMaybe $ fromRaw raw_opcode
+      (io, _) <- hoistMaybe $ parse (admin vm) action
+      over ptr (+ width opcode) <$> liftIO io
     else do
-      let opcode = toEnum $ S.index (_memory vm) (_ptr vm)
+      raw_opcode <- hoistMaybe $ _memory vm !? _ptr vm
+      opcode <- hoistMaybe $ fromRaw raw_opcode
 
       -- input is placed first, in case it changes the VM via an admin command!
       vm'@(VM {_memory, _ptr, _stack, _input}) <- case opcode of
-        In -> handleInput vm
+        In -> liftIO $ handleInput vm
         _ -> return vm
 
       -- this is lazy, cool!
-      let a_imm = S.index _memory (_ptr + 1)
-      let b_imm = S.index _memory (_ptr + 2)
-      let c_imm = S.index _memory (_ptr + 3)
-      let a_val = interpMemory _memory a_imm
-      let b_val = interpMemory _memory b_imm
-      let c_val = interpMemory _memory c_imm
+      a_imm <- hoistMaybe $ _memory !? (_ptr + 1)
+      b_imm <- hoistMaybe $ _memory !? (_ptr + 2)
+      c_imm <- hoistMaybe $ _memory !? (_ptr + 3)
+      a_val <- hoistMaybe $ interpMemory _memory a_imm
+      b_val <- hoistMaybe $ interpMemory _memory b_imm
+      c_val <- hoistMaybe $ interpMemory _memory c_imm
 
       when
         (opcode == Out)
-        (putChar $ toEnum a_val)
+        (liftIO $ putChar $ toEnum a_val)
 
       -- this is just for readability
       let mem addr val = over memory (S.update addr val)
       let inc = over ptr (+ width opcode)
 
-      return $
-        vm'
-          & ( case opcode of
-                Halt -> set halted True
-                Set -> inc . mem a_imm b_val
-                Push -> inc . over stack (a_val :)
-                Pop ->
-                  let hd : stack' = _stack
-                   in inc . mem a_imm hd . set stack stack'
-                Eq -> inc . mem a_imm (if b_val == c_val then 1 else 0)
-                Gt -> inc . mem a_imm (if b_val > c_val then 1 else 0)
-                Jmp -> set ptr a_val
-                Jt -> if a_val /= 0 then set ptr b_imm else inc
-                Jf -> if a_val == 0 then set ptr b_imm else inc
-                Add -> inc . mem a_imm ((b_val + c_val) `mod` 32768)
-                Mult -> inc . mem a_imm ((b_val * c_val) `mod` 32768)
-                Mod -> inc . mem a_imm (b_val `mod` c_val)
-                And -> inc . mem a_imm (b_val .&. c_val)
-                Or -> inc . mem a_imm (b_val .|. c_val)
-                Not -> inc . mem a_imm (complement b_val `mod` 32768)
-                Rmem -> inc . mem a_imm (interpMemory _memory $ S.index _memory b_val)
-                Wmem -> inc . mem a_val b_val
-                Call -> set ptr a_val . over stack (_ptr + width opcode :)
-                Ret ->
-                  case _stack of
-                    [] -> set halted True
-                    hd : stack' -> set ptr hd . set stack stack'
-                In ->
-                  case _input of
-                    hd : tl -> inc . set input tl . mem a_imm (fromEnum hd)
-                    [] -> const vm
-                Out -> inc
-                Noop -> inc
-            )
+      let cb addr a
+            | addr <= 32775 = Just a
+            | otherwise = Nothing
+
+      mutate <-
+        hoistMaybe
+          ( case opcode of
+              Halt -> Just $ set halted True
+              Set -> cb a_imm $ inc . mem a_imm b_val
+              Push -> Just $ inc . over stack (a_val :)
+              Pop ->
+                case _stack of
+                  [] -> Nothing
+                  hd : stack' -> cb a_imm $ inc . mem a_imm hd . set stack stack'
+              Eq -> cb a_imm $ inc . mem a_imm (if b_val == c_val then 1 else 0)
+              Gt -> cb a_imm $ inc . mem a_imm (if b_val > c_val then 1 else 0)
+              Jmp -> Just $ set ptr a_val
+              Jt -> Just $ if a_val /= 0 then set ptr b_imm else inc
+              Jf -> Just $ if a_val == 0 then set ptr b_imm else inc
+              Add -> cb a_imm $ inc . mem a_imm ((b_val + c_val) `mod` 32768)
+              Mult -> cb a_imm $ inc . mem a_imm ((b_val * c_val) `mod` 32768)
+              Mod -> cb a_imm $ inc . mem a_imm (b_val `mod` c_val)
+              And -> cb a_imm $ inc . mem a_imm (b_val .&. c_val)
+              Or -> cb a_imm $ inc . mem a_imm (b_val .|. c_val)
+              Not -> cb a_imm $ inc . mem a_imm (complement b_val `mod` 32768)
+              Rmem ->
+                do
+                  v1 <- _memory !? b_val
+                  v2 <- interpMemory _memory v1
+                  cb a_imm $ inc . mem a_imm v2
+              Wmem -> cb a_val $ inc . mem a_val b_val
+              Call -> Just $ set ptr a_val . over stack (_ptr + width opcode :)
+              Ret ->
+                Just
+                  ( case _stack of
+                      [] -> set halted True
+                      hd : stack' -> set ptr hd . set stack stack'
+                  )
+              In ->
+                case _input of
+                  hd : tl -> cb a_imm $ inc . set input tl . mem a_imm (fromEnum hd)
+                  [] -> Just $ const vm
+              Out -> Just inc
+              Noop -> Just inc
+          )
+
+      return $ mutate vm'
 
 -- iterate until the VM halts
-untilHalt :: VM -> IO VM
+untilHalt :: VM -> MaybeT IO VM
 untilHalt vm@(VM {_halted = True}) = return vm
 untilHalt vm = step vm >>= untilHalt
 

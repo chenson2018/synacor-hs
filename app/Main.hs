@@ -1,6 +1,7 @@
 module Main where
 
 import Control.Monad (when)
+import Control.Monad.Trans.Maybe (runMaybeT)
 import Options.Applicative
 import Synacor
 
@@ -47,7 +48,7 @@ main =
       Run ->
         do
           let vm = fromBinary autoOpt bin
-          vm' <- untilHalt vm
+          vm' <- runMaybeT (untilHalt vm)
           when printOpt (print vm')
       Convert ->
         assembly True 0 bin
