@@ -284,7 +284,7 @@ bindUntil cond iter a
 
 {- ORMOLU_DISABLE -}
 
-assembly :: (Num t, Eq t, Ord t, Integral t, Show t, PrintfArg t) => Bool -> Int -> [t] -> IO ()
+assembly :: (Integral t, Show t, PrintfArg t) => Bool -> Int -> [t] -> IO ()
 assembly _ _ [] = return ()
 assembly str_start ptr' (o : xs)
   | o == 19 =
