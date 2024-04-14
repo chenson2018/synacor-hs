@@ -192,87 +192,92 @@ I tried to cover the following cases:
   -- reading/writing out of bounds
   -- popping an empty stack
 -}
+
+{- ORMOLU_DISABLE -}
+
 step :: VM -> MaybeT IO VM
 step vm =
-  if M.member (_ptr vm) (_bypass vm)
-    then do
-      action <- hoistMaybe $ _bypass vm M.!? _ptr vm
-      raw_opcode <- hoistMaybe $ _memory vm !? _ptr vm
-      opcode <- hoistMaybe $ fromRaw raw_opcode
-      (io, _) <- hoistMaybe $ parse (admin vm) action
-      over ptr (+ width opcode) <$> liftIO io
-    else do
-      raw_opcode <- hoistMaybe $ _memory vm !? _ptr vm
-      opcode <- hoistMaybe $ fromRaw raw_opcode
+  do
+    action <- hoistMaybe $ _bypass vm M.!? _ptr vm
+    raw_opcode <- hoistMaybe $ _memory vm !? _ptr vm
+    opcode <- hoistMaybe $ fromRaw raw_opcode
+    (io, _) <- hoistMaybe $ parse (admin vm) action
+    over ptr (+ width opcode) <$> liftIO io
+  <|> 
+  do
+    raw_opcode <- hoistMaybe $ _memory vm !? _ptr vm
+    opcode <- hoistMaybe $ fromRaw raw_opcode
 
-      -- input is placed first, in case it changes the VM via an admin command!
-      vm'@(VM {_memory, _ptr, _stack, _input}) <- case opcode of
-        In -> liftIO $ handleInput vm
-        _ -> return vm
+    -- input is placed first, in case it changes the VM via an admin command!
+    vm'@(VM {_memory, _ptr, _stack, _input}) <- case opcode of
+      In -> liftIO $ handleInput vm
+      _ -> return vm
 
-      -- this is lazy, cool!
-      a_imm <- hoistMaybe $ _memory !? (_ptr + 1)
-      b_imm <- hoistMaybe $ _memory !? (_ptr + 2)
-      c_imm <- hoistMaybe $ _memory !? (_ptr + 3)
-      a_val <- hoistMaybe $ interpMemory _memory a_imm
-      b_val <- hoistMaybe $ interpMemory _memory b_imm
-      c_val <- hoistMaybe $ interpMemory _memory c_imm
+    -- this is lazy, cool!
+    a_imm <- hoistMaybe $ _memory !? (_ptr + 1)
+    b_imm <- hoistMaybe $ _memory !? (_ptr + 2)
+    c_imm <- hoistMaybe $ _memory !? (_ptr + 3)
+    a_val <- hoistMaybe $ interpMemory _memory a_imm
+    b_val <- hoistMaybe $ interpMemory _memory b_imm
+    c_val <- hoistMaybe $ interpMemory _memory c_imm
 
-      when
-        (opcode == Out)
-        (liftIO $ putChar $ toEnum a_val)
+    when
+      (opcode == Out)
+      (liftIO $ putChar $ toEnum a_val)
 
-      -- this is just for readability
-      let mem addr val = over memory (S.update addr val)
-      let inc = over ptr (+ width opcode)
+    -- this is just for readability
+    let mem addr val = over memory (S.update addr val)
+    let inc = over ptr (+ width opcode)
 
-      let cb addr a
-            | addr <= 32775 = Just a
-            | otherwise = Nothing
+    let cb addr a
+          | addr <= 32775 = Just a
+          | otherwise = Nothing
 
-      mutate <-
-        hoistMaybe
-          ( case opcode of
-              Halt -> Just $ set halted True
-              Set -> cb a_imm $ inc . mem a_imm b_val
-              Push -> Just $ inc . over stack (a_val :)
-              Pop ->
-                case _stack of
-                  [] -> Nothing
-                  hd : stack' -> cb a_imm $ inc . mem a_imm hd . set stack stack'
-              Eq -> cb a_imm $ inc . mem a_imm (if b_val == c_val then 1 else 0)
-              Gt -> cb a_imm $ inc . mem a_imm (if b_val > c_val then 1 else 0)
-              Jmp -> Just $ set ptr a_val
-              Jt -> Just $ if a_val /= 0 then set ptr b_imm else inc
-              Jf -> Just $ if a_val == 0 then set ptr b_imm else inc
-              Add -> cb a_imm $ inc . mem a_imm ((b_val + c_val) `mod` 32768)
-              Mult -> cb a_imm $ inc . mem a_imm ((b_val * c_val) `mod` 32768)
-              Mod -> cb a_imm $ inc . mem a_imm (b_val `mod` c_val)
-              And -> cb a_imm $ inc . mem a_imm (b_val .&. c_val)
-              Or -> cb a_imm $ inc . mem a_imm (b_val .|. c_val)
-              Not -> cb a_imm $ inc . mem a_imm (complement b_val `mod` 32768)
-              Rmem ->
-                do
-                  v1 <- _memory !? b_val
-                  v2 <- interpMemory _memory v1
-                  cb a_imm $ inc . mem a_imm v2
-              Wmem -> cb a_val $ inc . mem a_val b_val
-              Call -> Just $ set ptr a_val . over stack (_ptr + width opcode :)
-              Ret ->
-                Just
-                  ( case _stack of
-                      [] -> set halted True
-                      hd : stack' -> set ptr hd . set stack stack'
-                  )
-              In ->
-                case _input of
-                  hd : tl -> cb a_imm $ inc . set input tl . mem a_imm (fromEnum hd)
-                  [] -> Just $ const vm
-              Out -> Just inc
-              Noop -> Just inc
-          )
+    mutate <-
+      hoistMaybe
+        ( case opcode of
+            Halt -> Just $ set halted True
+            Set -> cb a_imm $ inc . mem a_imm b_val
+            Push -> Just $ inc . over stack (a_val :)
+            Pop ->
+              case _stack of
+                [] -> Nothing
+                hd : stack' -> cb a_imm $ inc . mem a_imm hd . set stack stack'
+            Eq -> cb a_imm $ inc . mem a_imm (if b_val == c_val then 1 else 0)
+            Gt -> cb a_imm $ inc . mem a_imm (if b_val > c_val then 1 else 0)
+            Jmp -> Just $ set ptr a_val
+            Jt -> Just $ if a_val /= 0 then set ptr b_imm else inc
+            Jf -> Just $ if a_val == 0 then set ptr b_imm else inc
+            Add -> cb a_imm $ inc . mem a_imm ((b_val + c_val) `mod` 32768)
+            Mult -> cb a_imm $ inc . mem a_imm ((b_val * c_val) `mod` 32768)
+            Mod -> cb a_imm $ inc . mem a_imm (b_val `mod` c_val)
+            And -> cb a_imm $ inc . mem a_imm (b_val .&. c_val)
+            Or -> cb a_imm $ inc . mem a_imm (b_val .|. c_val)
+            Not -> cb a_imm $ inc . mem a_imm (complement b_val `mod` 32768)
+            Rmem ->
+              do
+                v1 <- _memory !? b_val
+                v2 <- interpMemory _memory v1
+                cb a_imm $ inc . mem a_imm v2
+            Wmem -> cb a_val $ inc . mem a_val b_val
+            Call -> Just $ set ptr a_val . over stack (_ptr + width opcode :)
+            Ret ->
+              Just
+                ( case _stack of
+                    [] -> set halted True
+                    hd : stack' -> set ptr hd . set stack stack'
+                )
+            In ->
+              case _input of
+                hd : tl -> cb a_imm $ inc . set input tl . mem a_imm (fromEnum hd)
+                [] -> Just $ const vm
+            Out -> Just inc
+            Noop -> Just inc
+        )
 
-      return $ mutate vm'
+    return $ mutate vm'
+
+{- ORMOLU_ENABLE -}
 
 -- generic monad iteration
 bindUntil :: (Monad m) => (a -> Bool) -> (a -> m a) -> a -> m a
