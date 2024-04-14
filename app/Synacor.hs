@@ -225,41 +225,37 @@ step vm =
       (opcode == Out)
       (liftIO $ putChar $ toEnum a_val)
 
-    -- this is just for readability
-    let mem addr val = over memory (S.update addr val)
     let inc = over ptr (+ width opcode)
-
-    let cb addr a
-          | addr <= 32775 = Just a
-          | otherwise = Nothing
+    let mem addr val f | addr <= 32775 = Just $ over memory (S.update addr val) . f
+                       | otherwise = Nothing
 
     mutate <-
       hoistMaybe
         ( case opcode of
             Halt -> Just $ set halted True
-            Set -> cb a_imm $ inc . mem a_imm b_val
+            Set -> mem a_imm b_val inc
             Push -> Just $ inc . over stack (a_val :)
             Pop ->
               case _stack of
                 [] -> Nothing
-                hd : stack' -> cb a_imm $ inc . mem a_imm hd . set stack stack'
-            Eq -> cb a_imm $ inc . mem a_imm (if b_val == c_val then 1 else 0)
-            Gt -> cb a_imm $ inc . mem a_imm (if b_val > c_val then 1 else 0)
+                hd : stack' -> mem a_imm hd $ inc . set stack stack'
+            Eq -> mem a_imm (if b_val == c_val then 1 else 0) inc
+            Gt -> mem a_imm (if b_val > c_val then 1 else 0) inc
             Jmp -> Just $ set ptr a_val
             Jt -> Just $ if a_val /= 0 then set ptr b_imm else inc
             Jf -> Just $ if a_val == 0 then set ptr b_imm else inc
-            Add -> cb a_imm $ inc . mem a_imm ((b_val + c_val) `mod` 32768)
-            Mult -> cb a_imm $ inc . mem a_imm ((b_val * c_val) `mod` 32768)
-            Mod -> cb a_imm $ inc . mem a_imm (b_val `mod` c_val)
-            And -> cb a_imm $ inc . mem a_imm (b_val .&. c_val)
-            Or -> cb a_imm $ inc . mem a_imm (b_val .|. c_val)
-            Not -> cb a_imm $ inc . mem a_imm (complement b_val `mod` 32768)
+            Add -> mem a_imm ((b_val + c_val) `mod` 32768) inc
+            Mult -> mem a_imm ((b_val * c_val) `mod` 32768) inc
+            Mod -> mem a_imm (b_val `mod` c_val) inc
+            And -> mem a_imm (b_val .&. c_val) inc
+            Or -> mem a_imm (b_val .|. c_val) inc
+            Not -> mem a_imm (complement b_val `mod` 32768) inc
             Rmem ->
               do
                 v1 <- _memory !? b_val
                 v2 <- interpMemory _memory v1
-                cb a_imm $ inc . mem a_imm v2
-            Wmem -> cb a_val $ inc . mem a_val b_val
+                mem a_imm v2 inc
+            Wmem -> mem a_val b_val inc
             Call -> Just $ set ptr a_val . over stack (_ptr + width opcode :)
             Ret ->
               Just
@@ -269,7 +265,7 @@ step vm =
                 )
             In ->
               case _input of
-                hd : tl -> cb a_imm $ inc . set input tl . mem a_imm (fromEnum hd)
+                hd : tl -> mem a_imm (fromEnum hd) (inc . set input tl)
                 [] -> Just $ const vm
             Out -> Just inc
             Noop -> Just inc
