@@ -165,22 +165,22 @@ admin vm =
 
 -- take user input, including admin commands that can mutate the VM
 -- either use precomputed or user input, each potentially using an admin command
-handleInput :: VM -> IO VM
-handleInput vm@(VM {_solution = sol : solution', _input = []}) =
+handleInput :: Opcode -> VM -> IO VM
+handleInput In vm@(VM {_solution = sol : solution', _input = []}) =
   do
     putStr $ "> " ++ sol
     case parse (admin vm) sol of
       Nothing -> return $ (set solution solution' . set input sol) vm
-      Just (io, _) -> io >>= (handleInput . set solution solution')
-handleInput vm@(VM {_solution = [], _input = []}) =
+      Just (io, _) -> io >>= (handleInput In . set solution solution')
+handleInput In vm@(VM {_solution = [], _input = []}) =
   do
     putStr "> "
     hFlush stdout
     action <- (++ "\n") <$> getLine
     case parse (admin vm) action of
       Nothing -> return $ set input action vm
-      Just (io, _) -> io >>= handleInput
-handleInput vm = return vm
+      Just (io, _) -> io >>= handleInput In
+handleInput _ vm = return vm
 
 {-
 an iteration of the virtual machine
@@ -209,9 +209,7 @@ step vm =
     opcode <- hoistMaybe $ fromRaw raw_opcode
 
     -- input is placed first, in case it changes the VM via an admin command!
-    vm'@(VM {_memory, _ptr, _stack, _input}) <- case opcode of
-      In -> liftIO $ handleInput vm
-      _ -> return vm
+    vm'@(VM {_memory, _ptr, _stack, _input}) <- liftIO $ handleInput opcode vm 
 
     -- this is lazy, cool!
     a_imm <- hoistMaybe $ _memory !? (_ptr + 1)
