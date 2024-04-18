@@ -150,7 +150,7 @@ admin vm =
     start <- natural
     stop <- natural
     let p = assembly True start $ map (S.index $ _memory vm) [start .. stop]  
-    return $ do p; return vm
+    return (p >> return vm)
     <|> 
   do
     _ <- symbol "bypass"
