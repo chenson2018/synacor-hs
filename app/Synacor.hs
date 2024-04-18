@@ -155,7 +155,7 @@ admin vm =
   do
     _ <- symbol "bypass"
     addr <- natural
-    action <- many (sat (/= '\n'))
+    action <- (many . sat) (/= '\n')
     return $ return (over bypass (M.insert addr action) vm)
     <|> 
   do 
