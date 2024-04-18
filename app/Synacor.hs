@@ -136,7 +136,7 @@ width Noop = 1
 admin :: VM -> Parser (IO VM)
 admin vm =
   do
-    symbol "state" >> return (do print vm; return vm)
+    symbol "state" >> return (print vm >> return vm)
     <|> 
   do
     _ <- symbol "set reg"
