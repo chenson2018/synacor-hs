@@ -175,7 +175,7 @@ handleInput In vm@(VM {_solution, _input = []}) =
           [] -> hFlush stdout >> (,_solution) . (++ "\n") <$> getLine
     case parse (admin vm) input' of
       Nothing -> return $ (set solution solution' . set input input') vm
-      Just (io, _) -> io >>= (handleInput In . set solution solution')
+      Just (io, _) -> io >>= handleInput In . set solution solution'
 handleInput _ vm = return vm
 
 {-
